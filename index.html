@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2A1B4E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>न्याय सहायक</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📰</text></svg>">
+<style>
+  :root {
+    --ground: #F7F5FB;
+    --card: #FFFFFF;
+    --ink: #241A38;
+    --muted: #6E6485;
+    --line: #E4DEF0;
+    --brand: #5B21B6;
+    --brand-dark: #2A1B4E;
+    --brand-soft: #EFE8FB;
+    --ok: #1B7C3D;
+    --warn-soft: #FDF3DC;
+    --warn-ink: #8A5A00;
+    --err-soft: #FCE9E9;
+    --err-ink: #A3282F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #17121F; --card: #221B31; --ink: #EFEAF8; --muted: #A79DBD;
+      --line: #3A3050; --brand: #B79AF5; --brand-dark: #1A1128; --brand-soft: #2E2345;
+      --warn-soft: #332A18; --warn-ink: #E5C069; --err-soft: #3A2022; --err-ink: #F0A0A5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Devanagari", system-ui, sans-serif;
+    font-size: 18px; line-height: 1.75;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 14px 90px; }
+
+  header.masthead {
+    background: linear-gradient(135deg, #1A1128 0%, #2A1B4E 55%, #3B2373 100%);
+    color: #fff; padding: max(14px, env(safe-area-inset-top)) 18px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: 0.02em; }
+  .brand p { margin: 2px 0 0; font-size: 12.5px; opacity: 0.85; letter-spacing: 0.06em; }
+  .iconbtn {
+    background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 12px; font-size: 20px; padding: 8px 12px; cursor: pointer;
+  }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    padding: 18px; margin-top: 16px; box-shadow: 0 1px 4px rgba(40,25,80,0.06);
+  }
+  h2 { font-size: 19px; margin: 0 0 10px; color: var(--brand); }
+  label { font-size: 14px; color: var(--muted); display: block; margin: 12px 0 4px; }
+  textarea, input[type=text], input[type=password] {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 12px; background: var(--ground);
+    color: var(--ink); font: inherit; padding: 12px 14px;
+  }
+  textarea:focus, input:focus { outline: 2px solid var(--brand); border-color: var(--brand); }
+  #topic { min-height: 110px; font-size: 19px; }
+
+  .btn {
+    display: block; width: 100%; border: 0; border-radius: 14px; cursor: pointer;
+    font: inherit; font-weight: 700; padding: 15px; margin-top: 14px;
+  }
+  .btn:disabled { opacity: 0.5; }
+  .btn-main { background: var(--brand); color: #fff; font-size: 20px; }
+  .btn-line { background: var(--brand-soft); color: var(--brand); font-size: 16px; }
+  .btnrow { display: flex; gap: 10px; }
+  .btnrow .btn { margin-top: 10px; }
+
+  .hint { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+
+  /* progress */
+  #progress { display: none; text-align: center; }
+  #progress .spin {
+    width: 42px; height: 42px; margin: 6px auto 12px; border-radius: 50%;
+    border: 4px solid var(--brand-soft); border-top-color: var(--brand);
+    animation: rot 0.9s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #progress .spin { animation-duration: 3s; } }
+  #progmsg { font-size: 17px; color: var(--brand); font-weight: 600; }
+
+  /* result */
+  #result { display: none; }
+  .headline {
+    border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 8px 0;
+    font-weight: 700; font-size: 17.5px; cursor: pointer;
+  }
+  .headline.sel { border-color: var(--brand); background: var(--brand-soft); }
+  .headline .tag { font-size: 11px; color: var(--brand); font-weight: 600; letter-spacing: 0.08em; }
+  #lekh { white-space: pre-wrap; font-size: 18.5px; margin: 12px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip {
+    background: var(--brand-soft); color: var(--brand); border: 0; border-radius: 999px;
+    font: inherit; font-size: 15px; font-weight: 600; padding: 8px 16px; cursor: pointer;
+  }
+  #imgbox { margin-top: 12px; }
+  #genimg { width: 100%; border-radius: 14px; display: none; }
+  #imgwait { display: none; text-align: center; padding: 26px 10px; background: var(--brand-soft); border-radius: 14px; color: var(--brand); font-weight: 600; }
+  #caption { background: var(--ground); border-radius: 12px; padding: 12px 14px; font-size: 16.5px; margin-top: 12px; white-space: pre-wrap; }
+
+  .note { border-radius: 12px; padding: 12px 16px; margin-top: 14px; font-size: 16px; display: none; }
+  .note.err { background: var(--err-soft); color: var(--err-ink); display: block; }
+  .note.ok { background: var(--warn-soft); color: var(--warn-ink); display: block; }
+  .note small { display: block; opacity: 0.75; font-size: 12.5px; word-break: break-all; }
+
+  /* settings + history + setup */
+  #settings, #histpanel { display: none; }
+  .kbd { font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
+  details.hist { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  details.hist summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+  details.hist .muted { color: var(--muted); font-size: 13px; }
+  .setup-en { font-size: 15px; line-height: 1.6; }
+  .setup-en a { color: var(--brand); font-weight: 600; }
+  .setup-en ol { padding-inline-start: 20px; }
+
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 26px; }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="brand">
+    <h1>न्याय सहायक</h1>
+    <p>एआई युग का नया समाचार पत्र — लेख + चित्र, एक जगह</p>
+  </div>
+  <div>
+    <button class="iconbtn" id="histbtn" title="पुराने लेख">🗂️</button>
+    <button class="iconbtn" id="setbtn" title="Settings">⚙️</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- SETUP (shown when keys missing) -->
+  <div class="card" id="setup" style="display:none">
+    <h2>One-time setup (for Pravesh)</h2>
+    <div class="setup-en">
+      Papa's app needs two free API keys, entered once on this phone (stored only on the device):
+      <ol>
+        <li><b>Claude key</b> — <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com → API keys</a>. Set a monthly spend limit (₹500 is plenty).</li>
+        <li><b>Gemini key</b> (free tier) — <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</li>
+      </ol>
+      Paste both in <b>⚙️ Settings</b> above, tap save, and hand the phone to Papa. 🙏
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="card" id="settings">
+    <h2>⚙️ Settings</h2>
+    <label>Claude API key (Anthropic)</label>
+    <input type="password" id="s_akey" placeholder="sk-ant-...">
+    <label>Gemini API key (Google AI Studio)</label>
+    <input type="password" id="s_gkey" placeholder="AIza...">
+    <label>Claude model</label>
+    <input type="text" id="s_amodel" class="kbd">
+    <label>Gemini image model</label>
+    <input type="text" id="s_gmodel" class="kbd">
+    <label>लेखन-शैली के नमूने (पापा के पुराने लेख — जितने ज़्यादा, उतनी सटीक आवाज़)</label>
+    <textarea id="s_style" style="min-height:140px"></textarea>
+    <button class="btn btn-main" id="savebtn">💾 Save settings</button>
+    <p class="hint">Keys stay in this phone's browser storage only — they are never uploaded anywhere except directly to Anthropic/Google.</p>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="card" id="histpanel">
+    <h2>🗂️ पुराने लेख</h2>
+    <div id="histlist"><p class="hint">अभी कोई पुराना लेख नहीं है।</p></div>
+  </div>
+
+  <!-- MAIN INPUT -->
+  <div class="card" id="main">
+    <h2>आज का विषय क्या है?</h2>
+    <textarea id="topic" placeholder="जैसे: आनासागर झील की सफ़ाई पर राजनीति…&#10;&#10;🎤 टाइप करने की जगह कीबोर्ड के माइक से बोल भी सकते हैं"></textarea>
+    <button class="btn btn-main" id="gobtn">✍️ लेख और चित्र बनाइए</button>
+    <p class="hint">कुछ ही देर में तैयार लेख, 3 शीर्षक, चित्र और caption — सब एक साथ मिलेगा।</p>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="card" id="progress">
+    <div class="spin"></div>
+    <div id="progmsg">संपादक जी लिख रहे हैं…</div>
+  </div>
+
+  <div class="note" id="msg" style="display:none"></div>
+
+  <!-- RESULT -->
+  <div class="card" id="result">
+    <h2>शीर्षक चुनिए <span style="font-size:13px;color:var(--muted);font-weight:400">(छूकर चुनें — WhatsApp में यही जाएगा)</span></h2>
+    <div id="headlines"></div>
+
+    <h2 style="margin-top:18px">लेख</h2>
+    <div id="lekh"></div>
+    <div class="btnrow">
+      <button class="btn btn-line" id="copylekh">📋 लेख कॉपी करें</button>
+    </div>
+    <div class="chips">
+      <button class="chip" data-fix="लेख को और भावुक और मार्मिक बनाइए">💜 और भावुक</button>
+      <button class="chip" data-fix="लेख को छोटा कीजिए — लगभग 250 शब्द">✂️ छोटा करो</button>
+      <button class="chip" data-fix="व्यंग्य और तीखा कीजिए">🌶️ और तीखा</button>
+      <button class="chip" id="customfix">✏️ अपना सुधार…</button>
+    </div>
+
+    <h2 style="margin-top:22px">चित्र</h2>
+    <div id="imgbox">
+      <div id="imgwait">🖼️ चित्र बन रहा है…</div>
+      <img id="genimg" alt="लेख का चित्र">
+    </div>
+    <div class="btnrow">
+      <button class="btn btn-line" id="reimg">🔁 दूसरा चित्र</button>
+      <button class="btn btn-line" id="saveimg">💾 सेव</button>
+    </div>
+
+    <h2 style="margin-top:22px">Caption</h2>
+    <div id="caption"></div>
+    <div class="btnrow">
+      <button class="btn btn-line" id="copycap">📋 Caption कॉपी</button>
+    </div>
+
+    <button class="btn btn-main" id="sharebtn">📤 WhatsApp पर भेजिए</button>
+    <button class="btn btn-line" id="newbtn">🆕 नया लेख शुरू करें</button>
+  </div>
+
+  <footer>न्याय सहायक · लेख: Claude (Anthropic) · चित्र: Gemini (Google)<br>छापने से पहले तथ्य स्वयं जाँच लें 🙏</footer>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- config ---------- */
+const DEFAULT_STYLE = `यदि आनासागर बोल पाता, तो शायद आज यही कहता❗
+
+मेरे किनारों पर भीड़ तो बहुत है, लेकिन मेरे दर्द का स्थायी इलाज करने वाला अब भी कोई नहीं।
+
+सुबह मेरे घाटों पर झाड़ू चलती है, दोपहर में भाषण होते हैं, शाम को कैमरे चमकते हैं। कभी श्रमदान, कभी वाहन रैली, कभी बंद, कभी प्रदर्शन। मेरे नाम पर राजनीति का मेला लगा है, लेकिन मेरे घाव अब भी खुले हैं।
+
+मैंने राजाओं का वैभव देखा है। मैंने अजमेर को बसते, बढ़ते और संवरते देखा है। कभी मैं इस शहर की पहचान था, आज मैं उसकी उपेक्षा का प्रतीक बन गया हूँ।
+
+मेरे जल में गंदे नाले गिरते रहे। मेरी गहराई गाद से भरती रही। मेरी मछलियाँ मरती रहीं। मेरी सतह पर सड़ांध तैरती रही। लेकिन व्यवस्था फाइलों में योजनाएँ बनाती रही और राजनीति अवसर तलाशती रही।`;
+
+const CFG_KEY = "nyay_cfg", HIST_KEY = "nyay_history";
+
+function loadCfg() {
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem(CFG_KEY) || "{}"); } catch (e) {}
+  return {
+    akey: c.akey || "",
+    gkey: c.gkey || "",
+    amodel: c.amodel || "claude-opus-4-8",
+    gmodel: c.gmodel || "gemini-2.5-flash-image",
+    style: c.style || DEFAULT_STYLE
+  };
+}
+let cfg = loadCfg();
+
+const SCHEMA = {
+  type: "object",
+  properties: {
+    shirshak: { type: "array", items: { type: "string" }, description: "ठीक 3 अख़बारी शीर्षक" },
+    lekh: { type: "string", description: "पूरा लेख; अनुच्छेद \\n\\n से अलग करें" },
+    caption: { type: "string", description: "2 पंक्तियाँ + 3-4 hashtags" },
+    image_prompt: { type: "string", description: "English image prompt" }
+  },
+  required: ["shirshak", "lekh", "caption", "image_prompt"],
+  additionalProperties: false
+};
+
+function systemPrompt() {
+  return `आप «न्याय» समाचार पत्र के वरिष्ठ लेखक और संपादक हैं। «न्याय» एआई युग का नया हिन्दी समाचार पत्र है — आदर्श: सत्य की तह तक, निष्पक्ष विश्लेषण, डेटा-आधारित पत्रकारिता, भविष्य की पत्रकारिता।
+
+लेखक की शैली के नमूने — इसी आवाज़ और अंदाज़ में लिखिए:
+<style_samples>
+${cfg.style}
+</style_samples>
+
+नियम:
+- लेख 350–500 शब्द। शुद्ध हिन्दी, छोटे वाक्य, छोटे अनुच्छेद। भावनात्मक, मार्मिक और व्यंग्य का संतुलन — ऊपर के नमूनों जैसी शैली।
+- कोई तथ्य, आँकड़ा या नाम गढ़ें नहीं। जो बात आप पक्के तौर पर नहीं जानते, उसके ठीक बाद ⚠️[जाँच लें] लिखें।
+- shirshak: ठीक 3 विकल्प — आकर्षक, अख़बारी।
+- caption: WhatsApp/Facebook के लिए 2 छोटी पंक्तियाँ + 3-4 हिन्दी hashtags।
+- image_prompt: English में — लेख के मुख्य भाव का एक नाटकीय, प्रतीकात्मक दृश्य। किसी वास्तविक व्यक्ति (नेता आदि) का चेहरा नहीं। अंत में हमेशा जोड़ें: "photorealistic, dramatic emotional lighting, Indian setting, wide 16:9 format".
+- जब उपयोगकर्ता सुधार माँगे, तो वही लेख सुधारकर पूरा result दोबारा दें — केवल माँगा हुआ बदलाव करें, बाक़ी वैसा ही रखें।`;
+}
+
+/* ---------- helpers ---------- */
+const $ = (id) => document.getElementById(id);
+let convo = [];          // conversation with Claude for edits
+let current = null;      // latest parsed result
+let selHeadline = 0;
+let imgDataUrl = null;
+
+function show(el, on) { el.style.display = on ? "block" : "none"; }
+function toggle(el) { show(el, getComputedStyle(el).display === "none"); }
+function note(kind, text, detail) {
+  const m = $("msg");
+  m.className = "note " + kind;
+  m.innerHTML = "";
+  m.append(text);
+  if (detail) { const s = document.createElement("small"); s.textContent = detail; m.append(s); }
+  show(m, true);
+  m.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function clearNote() { show($("msg"), false); }
+
+const PROG_MSGS = ["संपादक जी लिख रहे हैं…", "शीर्षक सोचे जा रहे हैं…", "शब्दों में धार दी जा रही है…", "बस थोड़ी देर और…"];
+let progTimer = null;
+function progress(on, msgs) {
+  show($("progress"), on);
+  clearInterval(progTimer);
+  if (on) {
+    const list = msgs || PROG_MSGS;
+    let i = 0;
+    $("progmsg").textContent = list[0];
+    progTimer = setInterval(() => { i = (i + 1) % list.length; $("progmsg").textContent = list[i]; }, 6000);
+  }
+}
+
+/* ---------- Claude (article) ---------- */
+async function callClaude(messages) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": cfg.akey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: cfg.amodel,
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+      system: systemPrompt(),
+      messages: messages
+    })
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch (e) {}
+    const map = {
+      401: "Claude की चाबी (API key) ग़लत है — ⚙️ Settings में जाँचें।",
+      400: "अनुरोध में दिक़्क़त आई — बेटे को technical detail दिखाएँ।",
+      429: "अभी बहुत काम हो गया है — 1-2 मिनट रुककर फिर दबाइए।",
+      529: "Claude पर अभी भीड़ है — थोड़ी देर में फिर कोशिश करें।"
+    };
+    throw new Error((map[res.status] || "लेख नहीं बन पाया — फिर कोशिश करें।") + " " + res.status + ": " + detail);
+  }
+  const data = await res.json();
+  if (data.stop_reason === "refusal") throw new Error("यह विषय AI ने अस्वीकार कर दिया — विषय बदलकर देखें। stop_reason: refusal");
+  if (data.stop_reason === "max_tokens") throw new Error("लेख अधूरा रह गया — फिर कोशिश करें। stop_reason: max_tokens");
+  const textBlock = (data.content || []).find(b => b.type === "text");
+  if (!textBlock) throw new Error("कोई उत्तर नहीं मिला — फिर कोशिश करें। empty content");
+  return textBlock.text;
+}
+
+/* ---------- Gemini (image) ---------- */
+async function callGemini(prompt) {
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + cfg.gmodel + ":generateContent";
+  const doFetch = (body) => fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": cfg.gkey },
+    body: JSON.stringify(body)
+  });
+  const contents = [{ parts: [{ text: prompt }] }];
+  let res = await doFetch({ contents: contents, generationConfig: { imageConfig: { aspectRatio: "16:9" } } });
+  if (res.status === 400) res = await doFetch({ contents: contents }); // older models reject imageConfig
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch (e) {}
+    const map = {
+      400: "Gemini की चाबी (API key) ग़लत लगती है — ⚙️ Settings में जाँचें।",
+      403: "Gemini की चाबी (API key) ग़लत है — ⚙️ Settings में जाँचें।",
+      429: "आज के मुफ़्त चित्र पूरे हो गए — कल फिर बनेंगे, या 1 मिनट रुककर फिर दबाएँ।"
+    };
+    throw new Error((map[res.status] || "चित्र नहीं बन पाया — 🔁 फिर कोशिश करें।") + " " + res.status + ": " + detail);
+  }
+  const data = await res.json();
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const img = parts.find(p => p.inlineData && p.inlineData.data);
+  if (!img) throw new Error("चित्र नहीं मिला — 🔁 दूसरा चित्र दबाकर फिर कोशिश करें। no inlineData in response");
+  return "data:" + (img.inlineData.mimeType || "image/png") + ";base64," + img.inlineData.data;
+}
+
+/* ---------- render ---------- */
+function renderResult(r) {
+  current = r;
+  selHeadline = 0;
+  const hbox = $("headlines");
+  hbox.innerHTML = "";
+  (r.shirshak || []).slice(0, 3).forEach((h, i) => {
+    const d = document.createElement("div");
+    d.className = "headline" + (i === 0 ? " sel" : "");
+    d.innerHTML = "<span class='tag'>विकल्प " + (i + 1) + "</span><br>";
+    d.append(h);
+    d.onclick = () => {
+      selHeadline = i;
+      hbox.querySelectorAll(".headline").forEach((x, j) => x.classList.toggle("sel", j === i));
+    };
+    hbox.append(d);
+  });
+  $("lekh").textContent = r.lekh || "";
+  $("caption").textContent = r.caption || "";
+  show($("result"), true);
+}
+
+async function makeImage(extra) {
+  if (!current) return;
+  imgDataUrl = null;
+  show($("genimg"), false);
+  show($("imgwait"), true);
+  try {
+    imgDataUrl = await callGemini(current.image_prompt + (extra || ""));
+    $("genimg").src = imgDataUrl;
+    show($("genimg"), true);
+  } catch (e) {
+    const [msg, detail] = String(e.message).split(" ");
+    note("err", msg, detail);
+  } finally {
+    show($("imgwait"), false);
+  }
+}
+
+/* ---------- history ---------- */
+function saveHistory(topic, r) {
+  try {
+    const h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
+    h.unshift({ d: new Date().toLocaleDateString("hi-IN"), topic: topic, r: r });
+    localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 30)));
+  } catch (e) {}
+}
+function renderHistory() {
+  const box = $("histlist");
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); } catch (e) {}
+  if (!h.length) { box.innerHTML = "<p class='hint'>अभी कोई पुराना लेख नहीं है।</p>"; return; }
+  box.innerHTML = "";
+  h.forEach(item => {
+    const d = document.createElement("details");
+    d.className = "hist";
+    const s = document.createElement("summary");
+    s.textContent = (item.r.shirshak && item.r.shirshak[0]) || item.topic;
+    const m = document.createElement("div");
+    m.className = "muted";
+    m.textContent = item.d + " · " + item.topic;
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = "फिर खोलें";
+    b.onclick = () => {
+      convo = [
+        { role: "user", content: "विषय: " + item.topic },
+        { role: "assistant", content: JSON.stringify(item.r) }
+      ];
+      renderResult(item.r);
+      show($("histpanel"), false);
+      makeImage();
+      $("result").scrollIntoView({ behavior: "smooth" });
+    };
+    d.append(s, m, b);
+    box.append(d);
+  });
+}
+
+/* ---------- actions ---------- */
+async function generate() {
+  const topic = $("topic").value.trim();
+  if (!cfg.akey || !cfg.gkey) { show($("setup"), true); show($("settings"), true); fillSettings(); $("setup").scrollIntoView(); return; }
+  if (!topic) { note("ok", "पहले ऊपर आज का विषय लिखिए या बोलिए 🙏"); return; }
+  clearNote();
+  show($("result"), false);
+  $("gobtn").disabled = true;
+  progress(true);
+  convo = [{ role: "user", content: "आज का विषय / मेरी कच्ची बात:\n" + topic }];
+  try {
+    const raw = await callClaude(convo);
+    const r = JSON.parse(raw);
+    convo.push({ role: "assistant", content: raw });
+    progress(false);
+    renderResult(r);
+    saveHistory(topic, r);
+    $("result").scrollIntoView({ behavior: "smooth" });
+    await makeImage();
+  } catch (e) {
+    progress(false);
+    const [msg, detail] = String(e.message).split(" ");
+    note("err", msg, detail);
+  } finally {
+    $("gobtn").disabled = false;
+  }
+}
+
+async function applyFix(instruction) {
+  if (!current) return;
+  clearNote();
+  progress(true, ["सुधार किया जा रहा है…", "बस थोड़ी देर…"]);
+  convo.push({ role: "user", content: "सुधार कीजिए: " + instruction });
+  try {
+    const raw = await callClaude(convo);
+    const r = JSON.parse(raw);
+    convo.push({ role: "assistant", content: raw });
+    renderResult(r);
+    note("ok", "✅ सुधार हो गया — नीचे देखिए।");
+  } catch (e) {
+    convo.pop();
+    const [msg, detail] = String(e.message).split(" ");
+    note("err", msg, detail);
+  } finally {
+    progress(false);
+  }
+}
+
+function shareText() {
+  const h = current && current.shirshak ? current.shirshak[selHeadline] || current.shirshak[0] : "";
+  return h + "\n\n" + (current ? current.caption : "");
+}
+
+async function shareAll() {
+  if (!current) return;
+  const text = shareText();
+  try {
+    if (imgDataUrl && navigator.canShare) {
+      const blob = await (await fetch(imgDataUrl)).blob();
+      const file = new File([blob], "nyay.png", { type: blob.type || "image/png" });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], text: text });
+        return;
+      }
+    }
+    if (navigator.share) { await navigator.share({ text: text + "\n\n" + current.lekh }); return; }
+    throw new Error("no-share");
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    await copy(text + "\n\n" + current.lekh, "लेख कॉपी हो गया — अब WhatsApp खोलकर paste कीजिए। चित्र 💾 सेव से gallery में जाएगा।");
+  }
+}
+
+async function copy(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const t = document.createElement("textarea");
+    t.value = text; document.body.append(t); t.select();
+    document.execCommand("copy"); t.remove();
+  }
+  note("ok", okMsg || "📋 कॉपी हो गया!");
+}
+
+function saveImage() {
+  if (!imgDataUrl) { note("ok", "चित्र अभी बना नहीं है।"); return; }
+  const a = document.createElement("a");
+  a.href = imgDataUrl;
+  a.download = "nyay-" + Date.now() + ".png";
+  a.click();
+  note("ok", "💾 चित्र download हो गया (gallery/Files में मिलेगा)।");
+}
+
+/* ---------- settings ---------- */
+function fillSettings() {
+  $("s_akey").value = cfg.akey; $("s_gkey").value = cfg.gkey;
+  $("s_amodel").value = cfg.amodel; $("s_gmodel").value = cfg.gmodel;
+  $("s_style").value = cfg.style;
+}
+function saveSettings() {
+  cfg = {
+    akey: $("s_akey").value.trim(),
+    gkey: $("s_gkey").value.trim(),
+    amodel: $("s_amodel").value.trim() || "claude-opus-4-8",
+    gmodel: $("s_gmodel").value.trim() || "gemini-2.5-flash-image",
+    style: $("s_style").value.trim() || DEFAULT_STYLE
+  };
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+  show($("settings"), false);
+  show($("setup"), !(cfg.akey && cfg.gkey));
+  note("ok", "✅ Settings save हो गईं।");
+}
+
+/* ---------- wire up ---------- */
+$("gobtn").onclick = generate;
+$("savebtn").onclick = saveSettings;
+$("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
+$("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
+$("copylekh").onclick = () => copy((current.shirshak[selHeadline] || "") + "\n\n" + current.lekh, "📋 शीर्षक सहित लेख कॉपी हो गया!");
+$("copycap").onclick = () => copy(current.caption);
+$("sharebtn").onclick = shareAll;
+$("saveimg").onclick = saveImage;
+$("reimg").onclick = () => makeImage("\nA different composition and camera angle this time.");
+$("newbtn").onclick = () => { $("topic").value = ""; show($("result"), false); clearNote(); window.scrollTo({ top: 0, behavior: "smooth" }); $("topic").focus(); };
+$("customfix").onclick = () => {
+  const x = prompt("क्या सुधार चाहिए? (जैसे: अंत में एक सवाल जोड़ो)");
+  if (x && x.trim()) applyFix(x.trim());
+};
+document.querySelectorAll(".chip[data-fix]").forEach(c => c.onclick = () => applyFix(c.dataset.fix));
+
+if (!cfg.akey || !cfg.gkey) show($("setup"), true);
+</script>
+</body>
+</html>
