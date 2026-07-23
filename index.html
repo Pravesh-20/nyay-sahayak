@@ -35,7 +35,7 @@
   body {
     margin: 0; background: var(--ground); color: var(--ink);
     font-family: "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Devanagari", system-ui, sans-serif;
-    font-size: 18px; line-height: 1.75;
+    font-size: 19px; line-height: 1.8;
     -webkit-tap-highlight-color: transparent;
   }
   .wrap { max-width: 640px; margin: 0 auto; padding: 0 14px 90px; }
@@ -56,8 +56,8 @@
     background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 18px; margin-top: 16px; box-shadow: 0 1px 4px rgba(40,25,80,0.06);
   }
-  h2 { font-size: 19px; margin: 0 0 10px; color: var(--brand); }
-  label { font-size: 14px; color: var(--muted); display: block; margin: 12px 0 4px; }
+  h2 { font-size: 21px; margin: 0 0 10px; color: var(--brand); }
+  label { font-size: 15px; color: var(--muted); display: block; margin: 12px 0 4px; }
   textarea, input[type=text], input[type=password] {
     width: 100%; border: 1.5px solid var(--line); border-radius: 12px; background: var(--ground);
     color: var(--ink); font: inherit; padding: 12px 14px;
@@ -77,6 +77,10 @@
   @keyframes pulse { 50% { opacity: 0.7; } }
   @media (prefers-reduced-motion: reduce) { .btn-mic.on { animation: none; } }
   #miclive { display: none; margin-top: 10px; text-align: center; color: #C62828; font-weight: 700; font-size: 15.5px; }
+  .editbox { background: var(--brand-soft); border-radius: 14px; padding: 14px 16px 16px; margin-top: 20px; }
+  .editbox textarea { min-height: 64px; background: var(--card); margin-top: 10px; font-size: 18px; }
+  .btn-wa { background: #1DAB55; color: #fff; font-size: 20px; }
+  .subtle { font-size: 14px; color: var(--muted); font-weight: 400; }
   .btnrow { display: flex; gap: 10px; }
   .btnrow .btn { margin-top: 10px; }
 
@@ -101,7 +105,7 @@
   }
   .headline.sel { border-color: var(--brand); background: var(--brand-soft); }
   .headline .tag { font-size: 11px; color: var(--brand); font-weight: 600; letter-spacing: 0.08em; }
-  #lekh { white-space: pre-wrap; font-size: 18.5px; margin: 12px 0; }
+  #lekh { white-space: pre-wrap; font-size: 20px; margin: 12px 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .chip {
     background: var(--brand-soft); color: var(--brand); border: 0; border-radius: 999px;
@@ -204,39 +208,41 @@
 
   <!-- RESULT -->
   <div class="card" id="result">
-    <h2>शीर्षक चुनिए <span style="font-size:13px;color:var(--muted);font-weight:400">(छूकर चुनें — WhatsApp में यही जाएगा)</span></h2>
+    <h2>कौन-सा शीर्षक रखें? <span class="subtle">(छूकर चुनिए)</span></h2>
     <div id="headlines"></div>
 
-    <h2 style="margin-top:18px">लेख</h2>
+    <h2 style="margin-top:24px">लेख पढ़िए</h2>
     <div id="lekh"></div>
-    <div class="btnrow">
-      <button class="btn btn-line" id="copylekh">📋 लेख कॉपी करें</button>
-    </div>
-    <div class="chips">
-      <button class="chip" data-fix="लेख को और भावुक और मार्मिक बनाइए">💜 और भावुक</button>
-      <button class="chip" data-fix="लेख को छोटा कीजिए — लगभग 250 शब्द">✂️ छोटा करो</button>
-      <button class="chip" data-fix="व्यंग्य और तीखा कीजिए">🌶️ और तीखा</button>
-      <button class="chip" id="customfix">✏️ अपना सुधार…</button>
+
+    <div class="editbox">
+      <h2>✏️ कुछ बदलवाना हो तो बताइए</h2>
+      <div class="chips">
+        <button class="chip" data-fix="लेख को और भावुक और मार्मिक बनाइए">💜 और भावुक</button>
+        <button class="chip" data-fix="लेख को छोटा कीजिए — लगभग 250 शब्द">✂️ छोटा करो</button>
+        <button class="chip" data-fix="व्यंग्य और तीखा कीजिए">🌶️ और तीखा</button>
+      </div>
+      <textarea id="fixinput" placeholder="अपने शब्दों में लिखिए — जैसे: अंत में एक सवाल जोड़ दो"></textarea>
+      <button class="btn btn-line" id="fixbtn">✅ यह सुधार कीजिए</button>
     </div>
 
-    <h2 style="margin-top:22px">चित्र</h2>
+    <h2 style="margin-top:24px">चित्र</h2>
     <div id="imgbox">
       <div id="imgwait">🖼️ चित्र बन रहा है…</div>
       <img id="genimg" alt="लेख का चित्र">
     </div>
     <div class="btnrow">
       <button class="btn btn-line" id="reimg">🔁 दूसरा चित्र</button>
-      <button class="btn btn-line" id="saveimg">💾 सेव</button>
+      <button class="btn btn-line" id="saveimg">💾 चित्र सेव</button>
     </div>
-
-    <h2 style="margin-top:22px">Caption</h2>
+    <label>चित्र के साथ जाने वाला caption</label>
     <div id="caption"></div>
-    <div class="btnrow">
-      <button class="btn btn-line" id="copycap">📋 Caption कॉपी</button>
-    </div>
 
-    <button class="btn btn-main" id="sharebtn">📤 WhatsApp पर भेजिए</button>
-    <button class="btn btn-line" id="newbtn">🆕 नया लेख शुरू करें</button>
+    <h2 style="margin-top:26px">📤 WhatsApp पर भेजिए — दो आसान क़दम</h2>
+    <button class="btn btn-wa" id="sharetext">1️⃣ पहले लेख भेजिए</button>
+    <button class="btn btn-wa" id="shareimg">2️⃣ फिर चित्र भेजिए</button>
+    <button class="btn btn-line" id="copyall">📋 या पूरा लेख कॉपी करें (ख़ुद paste के लिए)</button>
+
+    <button class="btn btn-line" id="newbtn" style="margin-top:22px">🆕 नया लेख शुरू करें</button>
   </div>
 
   <footer>न्याय सहायक · लेख: Claude (Anthropic) · चित्र: Gemini (Google)<br>छापने से पहले तथ्य स्वयं जाँच लें 🙏</footer>
@@ -662,29 +668,45 @@ async function applyFix(instruction) {
   }
 }
 
-function shareText() {
-  const h = current && current.shirshak ? current.shirshak[selHeadline] || current.shirshak[0] : "";
-  return h + "\n\n" + (current ? current.caption : "");
+function chosenHeadline() {
+  return current && current.shirshak ? (current.shirshak[selHeadline] || current.shirshak[0] || "") : "";
+}
+function articleText() {
+  return chosenHeadline() + "\n\n" + (current ? current.lekh : "");
 }
 
-async function shareAll() {
+async function shareTextOnly() {
   if (!current) return;
-  const text = shareText();
+  const text = articleText();
   try {
-    if (imgDataUrl && navigator.canShare) {
-      const blob = await (await fetch(imgDataUrl)).blob();
-      const file = new File([blob], "nyay.png", { type: blob.type || "image/png" });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], text: text });
-        return;
-      }
-    }
-    if (navigator.share) { await navigator.share({ text: text + "\n\n" + current.lekh }); return; }
+    if (navigator.share) { await navigator.share({ text: text }); return; }
     throw new Error("no-share");
   } catch (e) {
     if (e.name === "AbortError") return;
-    await copy(text + "\n\n" + current.lekh, "लेख कॉपी हो गया — अब WhatsApp खोलकर paste कीजिए। चित्र 💾 सेव से gallery में जाएगा।");
+    await copy(text, "📋 लेख कॉपी हो गया — अब WhatsApp खोलकर group में paste कर दीजिए।");
   }
+}
+
+async function shareImage() {
+  if (!imgDataUrl) { note("ok", "चित्र अभी तैयार नहीं है — थोड़ा रुकिए, या 🔁 दूसरा चित्र दबाइए।"); return; }
+  const capText = chosenHeadline() + "\n\n" + (current ? current.caption : "");
+  try {
+    const blob = await (await fetch(imgDataUrl)).blob();
+    const file = new File([blob], "nyay.png", { type: blob.type || "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text: capText });
+      return;
+    }
+    throw new Error("no-share");
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    saveImage();
+  }
+}
+
+function copyAll() {
+  if (!current) return;
+  copy(articleText() + "\n\n" + current.caption, "📋 पूरा लेख + caption कॉपी हो गया — कहीं भी paste कीजिए।");
 }
 
 async function copy(text, okMsg) {
@@ -732,16 +754,18 @@ $("gobtn").onclick = generate;
 $("savebtn").onclick = saveSettings;
 $("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
 $("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
-$("copylekh").onclick = () => copy((current.shirshak[selHeadline] || "") + "\n\n" + current.lekh, "📋 शीर्षक सहित लेख कॉपी हो गया!");
-$("copycap").onclick = () => copy(current.caption);
-$("sharebtn").onclick = shareAll;
+$("sharetext").onclick = shareTextOnly;
+$("shareimg").onclick = shareImage;
+$("copyall").onclick = copyAll;
+$("fixbtn").onclick = () => {
+  const x = $("fixinput").value.trim();
+  if (!x) { note("ok", "पहले लिखिए क्या बदलना है — जैसे: अंत में एक सवाल जोड़ दो।"); return; }
+  $("fixinput").value = "";
+  applyFix(x);
+};
 $("saveimg").onclick = saveImage;
 $("reimg").onclick = () => makeImage("\nA different composition and camera angle this time.");
 $("newbtn").onclick = () => { $("topic").value = ""; show($("result"), false); clearNote(); window.scrollTo({ top: 0, behavior: "smooth" }); $("topic").focus(); };
-$("customfix").onclick = () => {
-  const x = prompt("क्या सुधार चाहिए? (जैसे: अंत में एक सवाल जोड़ो)");
-  if (x && x.trim()) applyFix(x.trim());
-};
 document.querySelectorAll(".chip[data-fix]").forEach(c => c.onclick = () => applyFix(c.dataset.fix));
 
 /* ---------- voice input (Hindi speech-to-text) ---------- */
