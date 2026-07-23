@@ -137,9 +137,16 @@
 <body>
 
 <header class="masthead">
-  <div class="brand">
-    <h1>न्याय सहायक</h1>
-    <p>एआई युग का नया समाचार पत्र — लेख + चित्र, एक जगह</p>
+  <div class="brand" style="display:flex;align-items:center;gap:12px">
+    <svg viewBox="0 0 100 100" width="52" height="52" aria-hidden="true" style="flex:none">
+      <circle cx="50" cy="50" r="48" fill="#E8931C" stroke="#fff" stroke-width="3"/>
+      <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
+      <text x="50" y="61" text-anchor="middle" font-size="28" font-weight="800" fill="#fff">न्याय</text>
+    </svg>
+    <div>
+      <h1>न्याय सहायक</h1>
+      <p>🇮🇳 🌹 एआई युग का नया समाचार पत्र 🌹 🇮🇳</p>
+    </div>
   </div>
   <div>
     <button class="iconbtn" id="histbtn" title="पुराने लेख">🗂️</button>
@@ -149,28 +156,15 @@
 
 <div class="wrap">
 
-  <!-- SETUP (shown when keys missing) -->
-  <div class="card" id="setup" style="display:none">
-    <h2>One-time setup (for Pravesh)</h2>
-    <div class="setup-en">
-      Papa's app needs just <b>one free API key</b> — ₹0/month; Google's free tier covers daily
-      articles <i>and</i> images (no card, no billing):
-      <ol>
-        <li>Sign in at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> with any Google account → <b>Create API key</b>.</li>
-        <li>Paste it in <b>⚙️ Settings</b> above and tap save.</li>
-        <li>Tap 🎤 once and allow the microphone, add this page to the home screen, and hand the phone to Papa. 🙏</li>
-      </ol>
-    </div>
-  </div>
-
   <!-- SETTINGS -->
   <div class="card" id="settings">
     <h2>⚙️ Settings</h2>
+    <div class="setup-en" style="margin-bottom:4px">One-time (for Pravesh): paste a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> — ₹0/month — then 💾 save and allow 🎤 once.</div>
     <label>⭐ Gemini API key (Google AI Studio — free) — बस यही एक ज़रूरी है</label>
     <input type="password" id="s_gkey" placeholder="AIza...">
     <label>लेख का model (Gemini)</label>
     <input type="text" id="s_tmodel" class="kbd">
-    <label>चित्र का model (Gemini)</label>
+    <label>चित्र का model (Gemini) — billing enable हो तो gemini-3-pro-image सबसे बढ़िया</label>
     <input type="text" id="s_gmodel" class="kbd">
     <label>Claude API key — optional (भरेंगे तो लेख Claude से बनेंगे; pay-per-use)</label>
     <input type="password" id="s_akey" placeholder="खाली छोड़ सकते हैं">
@@ -234,6 +228,8 @@
       <button class="btn btn-line" id="reimg">🔁 दूसरा चित्र</button>
       <button class="btn btn-line" id="saveimg">💾 चित्र सेव</button>
     </div>
+    <textarea id="imgfix" placeholder="चित्र में क्या बदलें? जैसे: बारिश हटाओ, लोग जोड़ दो, शाम का समय कर दो" style="margin-top:10px;min-height:56px"></textarea>
+    <button class="btn btn-line" id="imgfixbtn">🖌️ चित्र में यह बदलाव कीजिए</button>
     <label>चित्र के साथ जाने वाला caption</label>
     <div id="caption"></div>
 
@@ -245,7 +241,7 @@
     <button class="btn btn-line" id="newbtn" style="margin-top:22px">🆕 नया लेख शुरू करें</button>
   </div>
 
-  <footer>न्याय सहायक · लेख: Claude (Anthropic) · चित्र: Gemini (Google)<br>छापने से पहले तथ्य स्वयं जाँच लें 🙏</footer>
+  <footer>न्याय सहायक · AI साथी: Google Gemini<br>छापने से पहले तथ्य स्वयं जाँच लें 🙏</footer>
 </div>
 
 <script>
@@ -360,7 +356,7 @@ function loadCfg() {
     gkey: c.gkey || "",
     amodel: c.amodel || "claude-opus-4-8",
     tmodel: c.tmodel || "gemini-2.5-pro",
-    gmodel: c.gmodel || "gemini-2.5-flash-image",
+    gmodel: (c.gmodel && c.gmodel !== "gemini-2.5-flash-image") ? c.gmodel : "gemini-3.1-flash-image",
     style: c.style || DEFAULT_STYLE
   };
 }
@@ -393,7 +389,7 @@ ${cfg.style}
 - कोई तथ्य, आँकड़ा या नाम गढ़ें नहीं। जो बात आप पक्के तौर पर नहीं जानते, उसके ठीक बाद ⚠️[जाँच लें] लिखें।
 - shirshak: ठीक 3 विकल्प — आकर्षक, अख़बारी।
 - caption: WhatsApp/Facebook के लिए 2 छोटी पंक्तियाँ + 3-4 हिन्दी hashtags।
-- image_prompt: English में — लेख के मुख्य भाव का एक नाटकीय, प्रतीकात्मक दृश्य। किसी वास्तविक व्यक्ति (नेता आदि) का चेहरा नहीं। अंत में हमेशा जोड़ें: "photorealistic, dramatic emotional lighting, Indian setting, wide 16:9 format".
+- image_prompt: English में, 60–100 शब्द। लेख के मर्म को एक शक्तिशाली प्रतीकात्मक दृश्य (central visual metaphor) में बदलें — जैसे रोती हुई झील, फ़ाइलों में दबा शहर, कुर्सी को निगलता गड्ढा। स्पष्ट लिखें: central metaphor, foreground और background के तत्व, mood, cinematic lighting, camera angle। किसी वास्तविक व्यक्ति (नेता आदि) का चेहरा नहीं। अंत में हमेशा जोड़ें: "hyper-detailed photorealistic editorial illustration, dramatic emotional cinematic lighting, Indian setting, 4:3 format".
 - जब उपयोगकर्ता सुधार माँगे, तो वही लेख सुधारकर पूरा result दोबारा दें — केवल माँगा हुआ बदलाव करें, बाक़ी वैसा ही रखें।`;
 }
 
@@ -513,31 +509,70 @@ function parseJSON(text) {
 }
 
 /* ---------- Gemini (image) ---------- */
-async function callGemini(prompt) {
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + cfg.gmodel + ":generateContent";
+async function geminiImageRequest(parts, model) {
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
   const doFetch = (body) => fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": cfg.gkey },
     body: JSON.stringify(body)
   });
-  const contents = [{ parts: [{ text: prompt }] }];
-  let res = await doFetch({ contents: contents, generationConfig: { imageConfig: { aspectRatio: "16:9" } } });
-  if (res.status === 400) res = await doFetch({ contents: contents }); // older models reject imageConfig
+  const contents = [{ parts: parts }];
+  let res = await doFetch({ contents: contents, generationConfig: { imageConfig: { aspectRatio: "4:3" } } });
+  if (res.status === 400) res = await doFetch({ contents: contents });
+  if ((res.status === 404 || res.status === 429) && model !== "gemini-2.5-flash-image") {
+    return geminiImageRequest(parts, "gemini-2.5-flash-image");
+  }
   if (!res.ok) {
     let detail = "";
     try { detail = (await res.json()).error?.message || ""; } catch (e) {}
     const map = {
       400: "Gemini की चाबी (API key) ग़लत लगती है — ⚙️ Settings में जाँचें।",
       403: "Gemini की चाबी (API key) ग़लत है — ⚙️ Settings में जाँचें।",
+      404: "चित्र का model नहीं मिला — ⚙️ Settings में नाम जाँचें।",
       429: "आज के मुफ़्त चित्र पूरे हो गए — कल फिर बनेंगे, या 1 मिनट रुककर फिर दबाएँ।"
     };
     throw new Error((map[res.status] || "चित्र नहीं बन पाया — 🔁 फिर कोशिश करें।") + "||" + res.status + ": " + detail);
   }
   const data = await res.json();
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  const img = parts.find(p => p.inlineData && p.inlineData.data);
+  const partsOut = data.candidates?.[0]?.content?.parts || [];
+  const img = partsOut.find(p => p.inlineData && p.inlineData.data);
   if (!img) throw new Error("चित्र नहीं मिला — 🔁 दूसरा चित्र दबाकर फिर कोशिश करें।||no inlineData in response");
   return "data:" + (img.inlineData.mimeType || "image/png") + ";base64," + img.inlineData.data;
+}
+
+function callGemini(prompt) {
+  return geminiImageRequest([{ text: prompt }], cfg.gmodel);
+}
+
+function callGeminiEdit(b64, mime, instruction) {
+  return geminiImageRequest([
+    { inlineData: { mimeType: mime, data: b64 } },
+    { text: instruction + " — बाक़ी सब कुछ वैसा ही रखना (keep everything else the same)." }
+  ], cfg.gmodel);
+}
+
+async function editImage() {
+  const instr = $("imgfix").value.trim();
+  if (!instr) { note("ok", "पहले लिखिए चित्र में क्या बदलना है — जैसे: बारिश हटाओ।"); return; }
+  if (!imgDataUrl) { note("ok", "चित्र अभी तैयार नहीं है — थोड़ा रुकिए।"); return; }
+  const prev = imgDataUrl;
+  $("imgfix").value = "";
+  show($("genimg"), false);
+  show($("imgwait"), true);
+  try {
+    const mime = (prev.match(/^data:([^;]+);/) || [null, "image/png"])[1];
+    imgDataUrl = await callGeminiEdit(prev.split(",")[1], mime, instr);
+    $("genimg").src = imgDataUrl;
+    note("ok", "✅ चित्र सुधर गया — नीचे देखिए।");
+  } catch (e) {
+    imgDataUrl = prev;
+    $("genimg").src = prev;
+    const [msg, detail] = String(e.message).split("||");
+    note("err", msg, detail);
+  } finally {
+    show($("imgwait"), false);
+    show($("genimg"), true);
+  }
 }
 
 /* ---------- render ---------- */
@@ -622,7 +657,7 @@ function renderHistory() {
 /* ---------- actions ---------- */
 async function generate() {
   const topic = $("topic").value.trim();
-  if (!cfg.gkey) { show($("setup"), true); show($("settings"), true); fillSettings(); $("setup").scrollIntoView(); return; }
+  if (!cfg.gkey) { fillSettings(); show($("settings"), true); note("ok", "पहली बार: ⚙️ Settings में Gemini key save कीजिए (बेटे से कहिए)।"); $("settings").scrollIntoView(); return; }
   if (!topic) { note("ok", "पहले ऊपर आज का विषय लिखिए या बोलिए 🙏"); return; }
   clearNote();
   if (listening) micStop();
@@ -740,12 +775,11 @@ function saveSettings() {
     gkey: $("s_gkey").value.trim(),
     amodel: $("s_amodel").value.trim() || "claude-opus-4-8",
     tmodel: $("s_tmodel").value.trim() || "gemini-2.5-pro",
-    gmodel: $("s_gmodel").value.trim() || "gemini-2.5-flash-image",
+    gmodel: $("s_gmodel").value.trim() || "gemini-3.1-flash-image",
     style: $("s_style").value.trim() || DEFAULT_STYLE
   };
   localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
   show($("settings"), false);
-  show($("setup"), !(cfg.akey && cfg.gkey));
   note("ok", "✅ Settings save हो गईं।");
 }
 
@@ -765,6 +799,7 @@ $("fixbtn").onclick = () => {
 };
 $("saveimg").onclick = saveImage;
 $("reimg").onclick = () => makeImage("\nA different composition and camera angle this time.");
+$("imgfixbtn").onclick = editImage;
 $("newbtn").onclick = () => { $("topic").value = ""; show($("result"), false); clearNote(); window.scrollTo({ top: 0, behavior: "smooth" }); $("topic").focus(); };
 document.querySelectorAll(".chip[data-fix]").forEach(c => c.onclick = () => applyFix(c.dataset.fix));
 
@@ -811,7 +846,7 @@ $("micbtn").onclick = () => {
   listening ? micStop() : micStart();
 };
 
-if (!cfg.gkey) show($("setup"), true);
+if (!cfg.gkey) { fillSettings(); show($("settings"), true); }
 </script>
 </body>
 </html>
