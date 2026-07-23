@@ -72,6 +72,11 @@
   .btn:disabled { opacity: 0.5; }
   .btn-main { background: var(--brand); color: #fff; font-size: 20px; }
   .btn-line { background: var(--brand-soft); color: var(--brand); font-size: 16px; }
+  .btn-mic { background: var(--card); color: var(--brand); border: 2px solid var(--brand); font-size: 19px; }
+  .btn-mic.on { background: #C62828; border-color: #C62828; color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.7; } }
+  @media (prefers-reduced-motion: reduce) { .btn-mic.on { animation: none; } }
+  #miclive { display: none; margin-top: 10px; text-align: center; color: #C62828; font-weight: 700; font-size: 15.5px; }
   .btnrow { display: flex; gap: 10px; }
   .btnrow .btn { margin-top: 10px; }
 
@@ -144,26 +149,29 @@
   <div class="card" id="setup" style="display:none">
     <h2>One-time setup (for Pravesh)</h2>
     <div class="setup-en">
-      Papa's app needs two free API keys, entered once on this phone (stored only on the device):
+      Papa's app needs just <b>one free API key</b> — ₹0/month; Google's free tier covers daily
+      articles <i>and</i> images (no card, no billing):
       <ol>
-        <li><b>Claude key</b> — <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com → API keys</a>. Set a monthly spend limit (₹500 is plenty).</li>
-        <li><b>Gemini key</b> (free tier) — <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</li>
+        <li>Sign in at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> with any Google account → <b>Create API key</b>.</li>
+        <li>Paste it in <b>⚙️ Settings</b> above and tap save.</li>
+        <li>Tap 🎤 once and allow the microphone, add this page to the home screen, and hand the phone to Papa. 🙏</li>
       </ol>
-      Paste both in <b>⚙️ Settings</b> above, tap save, and hand the phone to Papa. 🙏
     </div>
   </div>
 
   <!-- SETTINGS -->
   <div class="card" id="settings">
     <h2>⚙️ Settings</h2>
-    <label>Claude API key (Anthropic)</label>
-    <input type="password" id="s_akey" placeholder="sk-ant-...">
-    <label>Gemini API key (Google AI Studio)</label>
+    <label>⭐ Gemini API key (Google AI Studio — free) — बस यही एक ज़रूरी है</label>
     <input type="password" id="s_gkey" placeholder="AIza...">
-    <label>Claude model</label>
-    <input type="text" id="s_amodel" class="kbd">
-    <label>Gemini image model</label>
+    <label>लेख का model (Gemini)</label>
+    <input type="text" id="s_tmodel" class="kbd">
+    <label>चित्र का model (Gemini)</label>
     <input type="text" id="s_gmodel" class="kbd">
+    <label>Claude API key — optional (भरेंगे तो लेख Claude से बनेंगे; pay-per-use)</label>
+    <input type="password" id="s_akey" placeholder="खाली छोड़ सकते हैं">
+    <label>Claude model (optional)</label>
+    <input type="text" id="s_amodel" class="kbd">
     <label>लेखन-शैली के नमूने (पापा के पुराने लेख — जितने ज़्यादा, उतनी सटीक आवाज़)</label>
     <textarea id="s_style" style="min-height:140px"></textarea>
     <button class="btn btn-main" id="savebtn">💾 Save settings</button>
@@ -179,7 +187,9 @@
   <!-- MAIN INPUT -->
   <div class="card" id="main">
     <h2>आज का विषय क्या है?</h2>
-    <textarea id="topic" placeholder="जैसे: आनासागर झील की सफ़ाई पर राजनीति…&#10;&#10;🎤 टाइप करने की जगह कीबोर्ड के माइक से बोल भी सकते हैं"></textarea>
+    <textarea id="topic" placeholder="जैसे: आनासागर झील की सफ़ाई पर राजनीति…"></textarea>
+    <button class="btn btn-mic" id="micbtn">🎤 बोलकर बताइए</button>
+    <div id="miclive">🔴 सुन रहा हूँ… बोलिए। रोकने के लिए ऊपर का बटन फिर दबाइए।</div>
     <button class="btn btn-main" id="gobtn">✍️ लेख और चित्र बनाइए</button>
     <p class="hint">कुछ ही देर में तैयार लेख, 3 शीर्षक, चित्र और caption — सब एक साथ मिलेगा।</p>
   </div>
@@ -236,15 +246,103 @@
 "use strict";
 
 /* ---------- config ---------- */
-const DEFAULT_STYLE = `यदि आनासागर बोल पाता, तो शायद आज यही कहता❗
+const DEFAULT_STYLE = `यदि *आनासागर बोल पाता,*
+ _तो शायद_ *_आज यही कहता_*❗
 
-मेरे किनारों पर भीड़ तो बहुत है, लेकिन मेरे दर्द का स्थायी इलाज करने वाला अब भी कोई नहीं।
+_मेरे किनारों पर भीड़ तो बहुत है, लेकिन मेरे दर्द का स्थायी इलाज करने वाला अब भी कोई नहीं ।_
 
-सुबह मेरे घाटों पर झाड़ू चलती है, दोपहर में भाषण होते हैं, शाम को कैमरे चमकते हैं। कभी श्रमदान, कभी वाहन रैली, कभी बंद, कभी प्रदर्शन। मेरे नाम पर राजनीति का मेला लगा है, लेकिन मेरे घाव अब भी खुले हैं।
+*_सुबह मेरे घाटों पर झाड़ू चलती है, दोपहर में भाषण होते हैं, शाम को कैमरे चमकते हैं। कभी श्रमदान, कभी वाहन रैली, कभी बंद, कभी प्रदर्शन। मेरे नाम पर राजनीति का मेला लगा है, लेकिन मेरे घाव अब भी खुले हैं।_*
 
-मैंने राजाओं का वैभव देखा है। मैंने अजमेर को बसते, बढ़ते और संवरते देखा है। कभी मैं इस शहर की पहचान था, आज मैं उसकी उपेक्षा का प्रतीक बन गया हूँ।
+*_मैंने राजाओं का वैभव देखा है। मैंने अजमेर को बसते, बढ़ते और संवरते देखा है। कभी मैं इस शहर की पहचान था, आज मैं उसकी उपेक्षा का प्रतीक बन गया हूँ।_*
 
-मेरे जल में गंदे नाले गिरते रहे। मेरी गहराई गाद से भरती रही। मेरी मछलियाँ मरती रहीं। मेरी सतह पर सड़ांध तैरती रही। लेकिन व्यवस्था फाइलों में योजनाएँ बनाती रही और राजनीति अवसर तलाशती रही।`;
+*_मेरे जल में गंदे नाले गिरते रहे। मेरी गहराई गाद से भरती रही। मेरी मछलियाँ मरती रहीं। मेरी सतह पर सड़ांध तैरती रही। लेकिन व्यवस्था फाइलों में योजनाएँ बनाती रही और राजनीति अवसर तलाशती रही।_*
+
+_जब मेरी दुर्दशा असहनीय हो गई, तब सबको मेरी याद आ गई।_
+
+*_कोई झाड़ू लेकर आया, कोई नारे लेकर आया, कोई बंद लेकर आया। लेकिन मैं पूछना चाहता हूँ—_*
+🤔 क्या मेरी बीमारी तीन दिन के श्रमदान से खत्म हो जाएगी ❓
+🤔 क्या एक दिन के बंद से मेरे पानी में फिर जीवन लौट आएगा ❓
+
+*_मुझे प्रतीकात्मक संवेदनाएँ नहीं चाहिएँ। मुझे स्थायी समाधान चाहिए।_*
+_मुझे ऐसे निर्णय चाहिए जो आने वाली पीढ़ियों को स्वच्छ आनासागर दें, न कि केवल चुनावी मौसम में चमकती तस्वीरें।_
+
+*_मेरे किनारों पर जुटी भीड़ मुझे आशा भी देती है और पीड़ा भी। आशा इसलिए कि लोगों को मेरी चिंता है। पीड़ा इसलिए कि उनकी चिंता अक्सर कैमरे के फ्लैश तक सीमित रह जाती है।_*
+
+*_आज आवश्यकता श्रमदान की नहीं, बल्कि कर्तव्यदान की है। आवश्यकता बंद की नहीं, बल्कि जवाबदेही की है। आवश्यकता भाषणों की नहीं, बल्कि ऐसी कार्ययोजना की है जो गंदे नालों को रोके, प्रदूषण पर नियंत्रण करे, वैज्ञानिक पुनर्जीवन सुनिश्चित करे और प्रशासन को परिणाम देने के लिए बाध्य करे।_*
+
+*_याद रखिए, यदि आनासागर मरता है तो केवल एक झील नहीं मरती—अजमेर की आत्मा घायल होती है। शहर की पहचान कमजोर होती है। पर्यटन प्रभावित होता है। पर्यावरण बिगड़ता है और आने वाली पीढ़ियों से उनका प्राकृतिक अधिकार छिन जाता है।_*
+
+_इसलिए, मेरे किनारों पर भीड़ बढ़ाने से पहले मेरे दर्द को समझिए।_
+
+*_क्योंकि इतिहास यह नहीं लिखेगा कि मेरे तट पर कितने लोगों ने झाड़ू लगाई थी या कितनी रैलियाँ निकली थीं_*❓
+
+*_इतिहास केवल इतना लिखेगा कि जब आनासागर मदद के लिए पुकार रहा था, तब क्या किसी ने उसका स्थायी इलाज किया था या नहीं_*❓
+
+@ _रुक्मा पुत्र ऋषि_
+
+---
+
+*_झाड़ू कम, कैमरा ज़्यादा…_*
+
+_आनासागर बना_ *इमेज वॉशिंग सेंटर*❗
+
+आनासागर की सफाई का दृश्य देखकर एक सवाल बार-बार मन में उठता है—क्या झील साफ हो रही है या राजनीतिक और सामाजिक छवि की धुलाई ❓
+
+विडंबना देखिए। जिन लोगों के घरों में झाड़ू, पौंछा और बर्तन के लिए वर्षों से काम करने वाले कर्मचारी हैं, वे आज चमचमाते कपड़ों में झाड़ू लेकर ऐसे उतरते हैं मानो सफाई उनके जीवन का सबसे बड़ा संस्कार हो। कपड़ों पर धूल का एक कण नहीं, चेहरे पर थकान का एक निशान नहीं, लेकिन कैमरों के सामने सेवा का पूरा प्रदर्शन।
+
+ऐसा लगता है कि झाड़ू कम चल रही है, कैमरे ज़्यादा चल रहे हैं।
+
+श्रमदान का अर्थ फोटो खिंचवाना नहीं, बल्कि श्रम के प्रति सम्मान होना है। यदि सफाई अभियान केवल सोशल मीडिया पोस्ट, प्रेस विज्ञप्ति और लाइक्स तक सीमित हो जाए, तो वह सेवा नहीं, बल्कि *इमेज मैनेजमेंट* बन जाता है।
+
+आनासागर की दुर्दशा किसी एक दिन में नहीं हुई। वर्षों की प्रशासनिक लापरवाही, राजनीतिक उदासीनता और नागरिक गैर-जिम्मेदारी ने इसे इस हालत तक पहुँचाया। यदि वही लोग, जो निर्णय लेने की स्थिति में थे या प्रभावशाली भूमिका निभाते रहे, आज केवल झाड़ू पकड़कर अपनी जिम्मेदारी से मुक्त होने का प्रमाणपत्र बाँटने लगें, तो सवाल उठना स्वाभाविक है।
+
+झील को प्रतीकात्मक सफाई नहीं, स्थायी समाधान चाहिए—सीवरेज का नियंत्रण, गाद निकालने की वैज्ञानिक योजना, ठोस कचरा प्रबंधन और जिम्मेदार प्रशासन। इन कठिन सवालों से बचने के लिए यदि झाड़ू को केवल फोटो का प्रॉप बना दिया जाए, तो यह शहर के साथ अन्याय है।
+
+याद रखिए, इतिहास उन लोगों को नहीं याद रखता जिन्होंने सबसे अच्छी सेल्फी ली थी। इतिहास उन्हें याद रखता है जिन्होंने सबसे कठिन काम किया था।
+
+आनासागर को *फोटोशूट* नहीं, *फॉलो-अप* चाहिए। झाड़ू नहीं, जवाबदेही चाहिए। और सबसे बढ़कर—दिखावे की सफेदी नहीं, नीयत की सफाई चाहिए।
+
+@ *_रुक्मा पुत्र ऋषि_*
+
+---
+
+*रुपया गिरा,* *भारतीय मुस्कुराए*❗😊
+
+
+
+_देश में डॉलर का बढ़ना केवल अर्थशास्त्र का विषय नहीं, मनोविज्ञान का भी विषय है। जैसे ही खबर आती है कि *रुपया डॉलर के मुकाबले फिर कमजोर हुआ'* टीवी स्टूडियो में अर्थशास्त्री चिंता जताते हैं, विपक्ष सरकार को घेरता है, सरकार वैश्विक परिस्थितियों का हवाला देती है, और इसी बीच कहीं किसी भारतीय के मोबाइल पर डॉलर में आई सैलरी का नोटिफिकेशन देखकर चेहरे पर मुस्कान खिल उठती है।_
+_यह वैश्वीकरण का नया गणित है—देश का रुपया गिरता है, लेकिन कुछ भारतीयों की आय बढ़ जाती है।_
+
+_विदेशी कंपनियों में काम करने वाले आईटी इंजीनियर, फ्रीलांसर, यूट्यूबर, ऐप डेवलपर, निर्यातक और एनआरआई परिवारों के लिए डॉलर महंगा होना अक्सर फायदे का सौदा बन जाता है। वही 1000 डॉलर, कल तक 94 हजार रुपये थे, आज 96 हजार हो गए। बिना अतिरिक्त मेहनत के आय बढ़ गई। ऐसे में रुपये की कमजोरी उनके लिए *बुरी खबर* नहीं रहती।_
+
+_विडंबना यह है कि जिस खबर से देश की आयात लागत बढ़ती है, पेट्रोल-डीजल महंगे होते हैं, विदेशी शिक्षा और पर्यटन का खर्च बढ़ता है, उसी खबर पर कुछ घरों में मिठाई जैसी खुशी भी महसूस होती है।_
+
+_यह किसी व्यक्ति का दोष नहीं, बल्कि अर्थव्यवस्था की संरचना का प्रभाव है। हर व्यक्ति पहले अपने घर का बजट देखता है, फिर देश का। राष्ट्रहित और व्यक्तिगत हित हमेशा एक दिशा में चलें, यह जरूरी नहीं।_
+
+_व्यंग्य तो यह है कि भारत में अब खुशी का पैमाना भी विदेशी मुद्रा तय करने लगी है। रुपया मजबूत हो जाए तो राष्ट्र खुश होना चाहिए, लेकिन डॉलर कमाने वालों के मन में हल्की उदासी भी झांक सकती है। और रुपया कमजोर हो जाए तो अर्थव्यवस्था चिंतित होती है, मगर कुछ बैंक खातों में खुशहाली उतर आती है।_
+
+_आख़िरकार, यह वही देश है जहाँ कभी लोग कहते थे । *मेरा भारत महान।* _अब कुछ लोग मन ही मन जोड़ देते हैं—_ *बस डॉलर थोड़ा और महान हो जाए*❗
+यही आधुनिक अर्थव्यवस्था का सबसे बड़ा व्यंग्य है।_ *_रुपया भारत का गिरता है, लेकिन मुस्कान भी भारतीयों के चेहरों पर ही खिलती है।_*
+
+@ *_रुक्मा पुत्र ऋषि_*
+
+---
+
+👉 *_जब समाज आगे आता है, तब शहर संवरता है_*
+
+_अजमेर में सफाई कर्मचारियों की हड़ताल के दौरान शहर के कई हिस्सों में स्वाभाविक रूप से कचरा जमा हो गया। विश्व प्रसिद्ध ख्वाजा मोइनुद्दीन चिश्ती की दरगाह के आसपास का दरगाह बाजार भी इससे अछूता नहीं रहा। अगले दिन जुम्मे की नमाज को देखते हुए बड़ी संख्या में जायरीन के आने की संभावना थी। ऐसे समय में गंदगी केवल सौंदर्य का नहीं, बल्कि स्वच्छता, स्वास्थ्य और शहर की प्रतिष्ठा का भी प्रश्न बन जाती है।_
+
+_ऐसी परिस्थिति में दरगाह बाजार के युवा *माशाल्लाह ग्रुप* ने सराहनीय पहल करते हुए स्वयं जिम्मेदारी संभाली और पूरे क्षेत्र की सफाई करवाई। यह केवल सफाई अभियान नहीं था, बल्कि सामाजिक उत्तरदायित्व, नागरिक चेतना और सेवा भावना का जीवंत उदाहरण भी था।_
+
+_किसी भी शहर की पहचान केवल उसकी ऐतिहासिक धरोहरों या धार्मिक स्थलों से नहीं बनती, बल्कि वहां के नागरिकों के व्यवहार और सहभागिता से भी बनती है। जब समाज बिना किसी भेदभाव के सार्वजनिक हित में आगे आता है, तब वह प्रशासन का विकल्प नहीं, बल्कि उसका सकारात्मक सहयोगी बन जाता है।_
+
+_माशाल्लाह ग्रुप की यह पहल इसलिए भी अनुकरणीय है क्योंकि इसने यह संदेश दिया कि सार्वजनिक स्थानों की स्वच्छता केवल सरकार या नगर निगम की जिम्मेदारी नहीं, बल्कि प्रत्येक नागरिक का भी नैतिक दायित्व है।_
+
+_अजमेर जैसे विश्वस्तरीय आध्यात्मिक और पर्यटन नगर में ऐसे प्रयास शहर की गरिमा को बनाए रखने में महत्वपूर्ण भूमिका निभाते हैं। यह पहल अन्य सामाजिक संगठनों और युवा समूहों के लिए भी प्रेरणा है कि परिस्थितियां कैसी भी हों, यदि समाज संकल्प ले तो स्वच्छता, सेवा और सामाजिक सौहार्द की मिसाल कायम की जा सकती है।_
+
+*माशाल्लाह ग्रुप* _के सभी युवाओं का यह प्रयास वास्तव में अनुकरणीय, अभिनंदनीय और समाज के लिए प्रेरणास्रोत है।_
+
+@ *_रुक्मा पुत्र ऋषि_*`;
 
 const CFG_KEY = "nyay_cfg", HIST_KEY = "nyay_history";
 
@@ -255,6 +353,7 @@ function loadCfg() {
     akey: c.akey || "",
     gkey: c.gkey || "",
     amodel: c.amodel || "claude-opus-4-8",
+    tmodel: c.tmodel || "gemini-2.5-pro",
     gmodel: c.gmodel || "gemini-2.5-flash-image",
     style: c.style || DEFAULT_STYLE
   };
@@ -283,6 +382,8 @@ ${cfg.style}
 
 नियम:
 - लेख 350–500 शब्द। शुद्ध हिन्दी, छोटे वाक्य, छोटे अनुच्छेद। भावनात्मक, मार्मिक और व्यंग्य का संतुलन — ऊपर के नमूनों जैसी शैली।
+- WhatsApp की तरह ज़ोर देने के लिए *मोटे* और _तिरछे_ चिह्नों का प्रयोग वैसे ही करें जैसे नमूनों में है; ❗❓ का प्रयोग भी नमूनों जैसा संयमित रखें।
+- लेख का अंत हमेशा लेखक की छाप से करें: @ *_रुक्मा पुत्र ऋषि_*
 - कोई तथ्य, आँकड़ा या नाम गढ़ें नहीं। जो बात आप पक्के तौर पर नहीं जानते, उसके ठीक बाद ⚠️[जाँच लें] लिखें।
 - shirshak: ठीक 3 विकल्प — आकर्षक, अख़बारी।
 - caption: WhatsApp/Facebook के लिए 2 छोटी पंक्तियाँ + 3-4 हिन्दी hashtags।
@@ -351,14 +452,58 @@ async function callClaude(messages) {
       429: "अभी बहुत काम हो गया है — 1-2 मिनट रुककर फिर दबाइए।",
       529: "Claude पर अभी भीड़ है — थोड़ी देर में फिर कोशिश करें।"
     };
-    throw new Error((map[res.status] || "लेख नहीं बन पाया — फिर कोशिश करें।") + " " + res.status + ": " + detail);
+    throw new Error((map[res.status] || "लेख नहीं बन पाया — फिर कोशिश करें।") + "||" + res.status + ": " + detail);
   }
   const data = await res.json();
-  if (data.stop_reason === "refusal") throw new Error("यह विषय AI ने अस्वीकार कर दिया — विषय बदलकर देखें। stop_reason: refusal");
-  if (data.stop_reason === "max_tokens") throw new Error("लेख अधूरा रह गया — फिर कोशिश करें। stop_reason: max_tokens");
+  if (data.stop_reason === "refusal") throw new Error("यह विषय AI ने अस्वीकार कर दिया — विषय बदलकर देखें।||stop_reason: refusal");
+  if (data.stop_reason === "max_tokens") throw new Error("लेख अधूरा रह गया — फिर कोशिश करें।||stop_reason: max_tokens");
   const textBlock = (data.content || []).find(b => b.type === "text");
-  if (!textBlock) throw new Error("कोई उत्तर नहीं मिला — फिर कोशिश करें। empty content");
+  if (!textBlock) throw new Error("कोई उत्तर नहीं मिला — फिर कोशिश करें।||empty content");
   return textBlock.text;
+}
+
+
+/* ---------- Gemini (article text — the free default) ---------- */
+async function callGeminiText(messages, model) {
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": cfg.gkey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt() + '\n\nउत्तर हमेशा केवल इसी JSON ढाँचे में दें, और कुछ नहीं:\n{"shirshak": ["शीर्षक1", "शीर्षक2", "शीर्षक3"], "lekh": "पूरा लेख", "caption": "caption", "image_prompt": "English prompt"}' }] },
+      contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+      generationConfig: { responseMimeType: "application/json", temperature: 0.8 }
+    })
+  });
+  if (res.status === 429 && model !== "gemini-2.5-flash") return callGeminiText(messages, "gemini-2.5-flash");
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch (e) {}
+    const map = {
+      400: "Gemini की चाबी (API key) ग़लत लगती है — ⚙️ Settings में जाँचें।",
+      403: "Gemini की चाबी (API key) ग़लत है — ⚙️ Settings में जाँचें।",
+      404: "Model का नाम ग़लत है — ⚙️ Settings में जाँचें।",
+      429: "आज का मुफ़्त कोटा पूरा हो गया — कुछ देर बाद फिर कोशिश करें।",
+      503: "Gemini पर अभी भीड़ है — 1 मिनट बाद फिर दबाइए।"
+    };
+    throw new Error((map[res.status] || "लेख नहीं बन पाया — फिर कोशिश करें।") + "||" + res.status + ": " + detail);
+  }
+  const data = await res.json();
+  const cand = data.candidates && data.candidates[0];
+  const txt = cand && cand.content && cand.content.parts ? cand.content.parts.map(p => p.text || "").join("") : "";
+  if (!txt) throw new Error("कोई उत्तर नहीं मिला — विषय बदलकर फिर कोशिश करें।||" + (cand && cand.finishReason ? "finishReason: " + cand.finishReason : "empty response"));
+  return txt;
+}
+
+function writeArticle(messages) {
+  return cfg.akey ? callClaude(messages) : callGeminiText(messages, cfg.tmodel);
+}
+
+function parseJSON(text) {
+  try { return JSON.parse(text); } catch (e) {}
+  const m = String(text).match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch (e) {} }
+  throw new Error("उत्तर ठीक से नहीं मिला — एक बार फिर कोशिश करें।||bad JSON");
 }
 
 /* ---------- Gemini (image) ---------- */
@@ -380,12 +525,12 @@ async function callGemini(prompt) {
       403: "Gemini की चाबी (API key) ग़लत है — ⚙️ Settings में जाँचें।",
       429: "आज के मुफ़्त चित्र पूरे हो गए — कल फिर बनेंगे, या 1 मिनट रुककर फिर दबाएँ।"
     };
-    throw new Error((map[res.status] || "चित्र नहीं बन पाया — 🔁 फिर कोशिश करें।") + " " + res.status + ": " + detail);
+    throw new Error((map[res.status] || "चित्र नहीं बन पाया — 🔁 फिर कोशिश करें।") + "||" + res.status + ": " + detail);
   }
   const data = await res.json();
   const parts = data.candidates?.[0]?.content?.parts || [];
   const img = parts.find(p => p.inlineData && p.inlineData.data);
-  if (!img) throw new Error("चित्र नहीं मिला — 🔁 दूसरा चित्र दबाकर फिर कोशिश करें। no inlineData in response");
+  if (!img) throw new Error("चित्र नहीं मिला — 🔁 दूसरा चित्र दबाकर फिर कोशिश करें।||no inlineData in response");
   return "data:" + (img.inlineData.mimeType || "image/png") + ";base64," + img.inlineData.data;
 }
 
@@ -421,7 +566,7 @@ async function makeImage(extra) {
     $("genimg").src = imgDataUrl;
     show($("genimg"), true);
   } catch (e) {
-    const [msg, detail] = String(e.message).split(" ");
+    const [msg, detail] = String(e.message).split("||");
     note("err", msg, detail);
   } finally {
     show($("imgwait"), false);
@@ -471,16 +616,17 @@ function renderHistory() {
 /* ---------- actions ---------- */
 async function generate() {
   const topic = $("topic").value.trim();
-  if (!cfg.akey || !cfg.gkey) { show($("setup"), true); show($("settings"), true); fillSettings(); $("setup").scrollIntoView(); return; }
+  if (!cfg.gkey) { show($("setup"), true); show($("settings"), true); fillSettings(); $("setup").scrollIntoView(); return; }
   if (!topic) { note("ok", "पहले ऊपर आज का विषय लिखिए या बोलिए 🙏"); return; }
   clearNote();
+  if (listening) micStop();
   show($("result"), false);
   $("gobtn").disabled = true;
   progress(true);
   convo = [{ role: "user", content: "आज का विषय / मेरी कच्ची बात:\n" + topic }];
   try {
-    const raw = await callClaude(convo);
-    const r = JSON.parse(raw);
+    const raw = await writeArticle(convo);
+    const r = parseJSON(raw);
     convo.push({ role: "assistant", content: raw });
     progress(false);
     renderResult(r);
@@ -489,7 +635,7 @@ async function generate() {
     await makeImage();
   } catch (e) {
     progress(false);
-    const [msg, detail] = String(e.message).split(" ");
+    const [msg, detail] = String(e.message).split("||");
     note("err", msg, detail);
   } finally {
     $("gobtn").disabled = false;
@@ -502,14 +648,14 @@ async function applyFix(instruction) {
   progress(true, ["सुधार किया जा रहा है…", "बस थोड़ी देर…"]);
   convo.push({ role: "user", content: "सुधार कीजिए: " + instruction });
   try {
-    const raw = await callClaude(convo);
-    const r = JSON.parse(raw);
+    const raw = await writeArticle(convo);
+    const r = parseJSON(raw);
     convo.push({ role: "assistant", content: raw });
     renderResult(r);
     note("ok", "✅ सुधार हो गया — नीचे देखिए।");
   } catch (e) {
     convo.pop();
-    const [msg, detail] = String(e.message).split(" ");
+    const [msg, detail] = String(e.message).split("||");
     note("err", msg, detail);
   } finally {
     progress(false);
@@ -563,7 +709,7 @@ function saveImage() {
 /* ---------- settings ---------- */
 function fillSettings() {
   $("s_akey").value = cfg.akey; $("s_gkey").value = cfg.gkey;
-  $("s_amodel").value = cfg.amodel; $("s_gmodel").value = cfg.gmodel;
+  $("s_amodel").value = cfg.amodel; $("s_tmodel").value = cfg.tmodel; $("s_gmodel").value = cfg.gmodel;
   $("s_style").value = cfg.style;
 }
 function saveSettings() {
@@ -571,6 +717,7 @@ function saveSettings() {
     akey: $("s_akey").value.trim(),
     gkey: $("s_gkey").value.trim(),
     amodel: $("s_amodel").value.trim() || "claude-opus-4-8",
+    tmodel: $("s_tmodel").value.trim() || "gemini-2.5-pro",
     gmodel: $("s_gmodel").value.trim() || "gemini-2.5-flash-image",
     style: $("s_style").value.trim() || DEFAULT_STYLE
   };
@@ -597,7 +744,50 @@ $("customfix").onclick = () => {
 };
 document.querySelectorAll(".chip[data-fix]").forEach(c => c.onclick = () => applyFix(c.dataset.fix));
 
-if (!cfg.akey || !cfg.gkey) show($("setup"), true);
+/* ---------- voice input (Hindi speech-to-text) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, micBase = "";
+if (SR) {
+  rec = new SR();
+  rec.lang = "hi-IN";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    let heard = "";
+    for (let i = 0; i < e.results.length; i++) heard += e.results[i][0].transcript;
+    $("topic").value = (micBase ? micBase + " " : "") + heard.trim();
+  };
+  rec.onend = () => {
+    if (listening) { micBase = $("topic").value; try { rec.start(); } catch (e) {} }
+  };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      micStop();
+      note("err", "माइक की अनुमति नहीं मिली — browser में microphone allow कीजिए, या कीबोर्ड के 🎤 से बोलिए।");
+    }
+  };
+}
+function micStart() {
+  micBase = $("topic").value.trim();
+  listening = true;
+  try { rec.start(); } catch (e) {}
+  $("micbtn").classList.add("on");
+  $("micbtn").textContent = "⏹️ बस, हो गया — लिख लिया";
+  show($("miclive"), true);
+}
+function micStop() {
+  listening = false;
+  if (rec) { try { rec.stop(); } catch (e) {} }
+  $("micbtn").classList.remove("on");
+  $("micbtn").textContent = "🎤 बोलकर बताइए";
+  show($("miclive"), false);
+}
+$("micbtn").onclick = () => {
+  if (!rec) { note("ok", "इस browser में सीधा माइक नहीं चलता — कीबोर्ड खोलकर उसके 🎤 से बोलिए।"); return; }
+  listening ? micStop() : micStart();
+};
+
+if (!cfg.gkey) show($("setup"), true);
 </script>
 </body>
 </html>
