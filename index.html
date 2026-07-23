@@ -230,6 +230,7 @@
     </div>
     <textarea id="imgfix" placeholder="चित्र में क्या बदलें? जैसे: बारिश हटाओ, लोग जोड़ दो, शाम का समय कर दो" style="margin-top:10px;min-height:56px"></textarea>
     <button class="btn btn-line" id="imgfixbtn">🖌️ चित्र में यह बदलाव कीजिए</button>
+    <button class="btn btn-line" id="gptimg">🎨 या ChatGPT में बनवाइए — prompt कॉपी होगा</button>
     <label>चित्र के साथ जाने वाला caption</label>
     <div id="caption"></div>
 
@@ -553,6 +554,22 @@ function parseJSON(text) {
 }
 
 /* ---------- Gemini (image) ---------- */
+/* ---------- free keyless image engine (FLUX via pollinations.ai) ---------- */
+async function pollinationsImage(promptText) {
+  const seed = Math.floor(Date.now() % 999983);
+  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(String(promptText).slice(0, 900)) +
+    "?width=1280&height=960&nologo=true&model=flux&seed=" + seed;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("चित्र-सेवा अभी व्यस्त है — 1 मिनट बाद 🔁 फिर दबाइए।||pollinations " + res.status);
+  const blob = await res.blob();
+  return await new Promise(function (ok, bad) {
+    const r = new FileReader();
+    r.onload = function () { ok(String(r.result)); };
+    r.onerror = bad;
+    r.readAsDataURL(blob);
+  });
+}
+
 async function geminiImageRequest(parts, model, tried) {
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
   const doFetch = (body) => fetch(url, {
@@ -569,6 +586,8 @@ async function geminiImageRequest(parts, model, tried) {
       const next = (await rankedModels(true)).find(m => !tried.some(x => x.model === m));
       if (next) return geminiImageRequest(parts, next, tried);
     }
+    const tp = parts.find(p => p.text);
+    if (tp && !parts.some(p => p.inlineData)) return pollinationsImage(tp.text);
   }
   if (!res.ok) {
     let detail = "";
@@ -577,7 +596,7 @@ async function geminiImageRequest(parts, model, tried) {
       400: "Gemini की चाबी (API key) ग़लत लगती है — ⚙️ Settings में जाँचें।",
       403: "Gemini की चाबी (API key) ग़लत है — ⚙️ Settings में जाँचें।",
       404: "चित्र का model नहीं मिला — ⚙️ Settings में नाम जाँचें।",
-      429: "आज के मुफ़्त चित्र पूरे हो गए — कल फिर बनेंगे, या 1 मिनट रुककर फिर दबाएँ।"
+      429: "चित्र-सेवा व्यस्त है — थोड़ी देर बाद 🔁 फिर दबाइए।"
     };
     throw new Error((map[res.status] || "चित्र नहीं बन पाया — 🔁 फिर कोशिश करें।") + "||" + res.status + ": " + detail);
   }
@@ -614,10 +633,16 @@ async function editImage() {
     $("genimg").src = imgDataUrl;
     note("ok", "✅ चित्र सुधर गया — नीचे देखिए।");
   } catch (e) {
-    imgDataUrl = prev;
-    $("genimg").src = prev;
-    const [msg, detail] = String(e.message).split("||");
-    note("err", msg, detail);
+    try {
+      imgDataUrl = await pollinationsImage((current ? current.image_prompt : "") + ". Additionally: " + instr);
+      $("genimg").src = imgDataUrl;
+      note("ok", "✅ मुफ़्त engine से नया सुधरा चित्र बना दिया — नीचे देखिए।");
+    } catch (e2) {
+      imgDataUrl = prev;
+      $("genimg").src = prev;
+      const [msg, detail] = String(e.message).split("||");
+      note("err", msg, detail);
+    }
   } finally {
     show($("imgwait"), false);
     show($("genimg"), true);
@@ -849,6 +874,11 @@ $("fixbtn").onclick = () => {
 $("saveimg").onclick = saveImage;
 $("reimg").onclick = () => makeImage("\nA different composition and camera angle this time.");
 $("imgfixbtn").onclick = editImage;
+$("gptimg").onclick = async () => {
+  if (!current) return;
+  await copy(current.image_prompt, "🎨 Image prompt कॉपी हो गया — ChatGPT खोलकर paste कीजिए, चित्र बनाकर 📥 save कीजिए।");
+  window.open("https://chatgpt.com/", "_blank");
+};
 $("newbtn").onclick = () => { $("topic").value = ""; show($("result"), false); clearNote(); window.scrollTo({ top: 0, behavior: "smooth" }); $("topic").focus(); };
 document.querySelectorAll(".chip[data-fix]").forEach(c => c.onclick = () => applyFix(c.dataset.fix));
 
