@@ -355,7 +355,7 @@ function loadCfg() {
     akey: c.akey || "",
     gkey: c.gkey || "",
     amodel: c.amodel || "claude-opus-4-8",
-    tmodel: c.tmodel || "gemini-2.5-pro",
+    tmodel: (c.tmodel && c.tmodel !== "gemini-2.5-pro") ? c.tmodel : "gemini-3-flash-preview",
     gmodel: (c.gmodel && c.gmodel !== "gemini-2.5-flash-image") ? c.gmodel : "gemini-3.1-flash-image",
     style: c.style || DEFAULT_STYLE
   };
@@ -465,8 +465,45 @@ async function callClaude(messages) {
 }
 
 
+/* ---------- Gemini model auto-discovery (self-healing when Google retires models) ---------- */
+let geminiModelCache = null;
+async function listGeminiModels() {
+  if (geminiModelCache) return geminiModelCache;
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", {
+      headers: { "x-goog-api-key": cfg.gkey }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    geminiModelCache = (data.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map(m => String(m.name || "").replace("models/", ""));
+  } catch (e) { return []; }
+  return geminiModelCache;
+}
+async function rankedModels(isImage) {
+  const names = await listGeminiModels();
+  const re = isImage
+    ? /^gemini-[\d.]+-(pro|flash)(-lite)?-image(-preview)?$/
+    : /^gemini-[\d.]+-(pro|flash)(-lite)?(-preview)?$/;
+  const score = (n) => {
+    const v = parseFloat((n.match(/^gemini-([\d.]+)/) || [0, "0"])[1]) * 100;
+    return v + (n.indexOf("-pro") > -1 ? 25 : n.indexOf("-lite") > -1 ? 0 : 20) - (n.indexOf("preview") > -1 ? 1 : 0);
+  };
+  return names.filter(n => re.test(n)).sort((a, b) => score(b) - score(a));
+}
+function persistModel(field, value) {
+  if (cfg[field] === value) return;
+  cfg[field] = value;
+  try {
+    const c = JSON.parse(localStorage.getItem(CFG_KEY) || "{}");
+    c[field] = value;
+    localStorage.setItem(CFG_KEY, JSON.stringify(c));
+  } catch (e) {}
+}
+
 /* ---------- Gemini (article text — the free default) ---------- */
-async function callGeminiText(messages, model) {
+async function callGeminiText(messages, model, tried) {
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
   const res = await fetch(url, {
     method: "POST",
@@ -477,7 +514,13 @@ async function callGeminiText(messages, model) {
       generationConfig: { responseMimeType: "application/json", temperature: 0.8 }
     })
   });
-  if (res.status === 429 && model !== "gemini-2.5-flash") return callGeminiText(messages, "gemini-2.5-flash");
+  if (res.status === 404 || res.status === 429) {
+    tried = (tried || []).concat([{ model: model, status: res.status }]);
+    if (tried.length <= 4) {
+      const next = (await rankedModels(false)).find(m => !tried.some(x => x.model === m));
+      if (next) return callGeminiText(messages, next, tried);
+    }
+  }
   if (!res.ok) {
     let detail = "";
     try { detail = (await res.json()).error?.message || ""; } catch (e) {}
@@ -494,6 +537,7 @@ async function callGeminiText(messages, model) {
   const cand = data.candidates && data.candidates[0];
   const txt = cand && cand.content && cand.content.parts ? cand.content.parts.map(p => p.text || "").join("") : "";
   if (!txt) throw new Error("कोई उत्तर नहीं मिला — विषय बदलकर फिर कोशिश करें।||" + (cand && cand.finishReason ? "finishReason: " + cand.finishReason : "empty response"));
+  if (tried && tried.some(x => x.status === 404)) persistModel("tmodel", model);
   return txt;
 }
 
@@ -509,7 +553,7 @@ function parseJSON(text) {
 }
 
 /* ---------- Gemini (image) ---------- */
-async function geminiImageRequest(parts, model) {
+async function geminiImageRequest(parts, model, tried) {
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
   const doFetch = (body) => fetch(url, {
     method: "POST",
@@ -519,8 +563,12 @@ async function geminiImageRequest(parts, model) {
   const contents = [{ parts: parts }];
   let res = await doFetch({ contents: contents, generationConfig: { imageConfig: { aspectRatio: "4:3" } } });
   if (res.status === 400) res = await doFetch({ contents: contents });
-  if ((res.status === 404 || res.status === 429) && model !== "gemini-2.5-flash-image") {
-    return geminiImageRequest(parts, "gemini-2.5-flash-image");
+  if (res.status === 404 || res.status === 429) {
+    tried = (tried || []).concat([{ model: model, status: res.status }]);
+    if (tried.length <= 4) {
+      const next = (await rankedModels(true)).find(m => !tried.some(x => x.model === m));
+      if (next) return geminiImageRequest(parts, next, tried);
+    }
   }
   if (!res.ok) {
     let detail = "";
@@ -537,6 +585,7 @@ async function geminiImageRequest(parts, model) {
   const partsOut = data.candidates?.[0]?.content?.parts || [];
   const img = partsOut.find(p => p.inlineData && p.inlineData.data);
   if (!img) throw new Error("चित्र नहीं मिला — 🔁 दूसरा चित्र दबाकर फिर कोशिश करें।||no inlineData in response");
+  if (tried && tried.some(x => x.status === 404)) persistModel("gmodel", model);
   return "data:" + (img.inlineData.mimeType || "image/png") + ";base64," + img.inlineData.data;
 }
 
@@ -774,7 +823,7 @@ function saveSettings() {
     akey: $("s_akey").value.trim(),
     gkey: $("s_gkey").value.trim(),
     amodel: $("s_amodel").value.trim() || "claude-opus-4-8",
-    tmodel: $("s_tmodel").value.trim() || "gemini-2.5-pro",
+    tmodel: $("s_tmodel").value.trim() || "gemini-3-flash-preview",
     gmodel: $("s_gmodel").value.trim() || "gemini-3.1-flash-image",
     style: $("s_style").value.trim() || DEFAULT_STYLE
   };
