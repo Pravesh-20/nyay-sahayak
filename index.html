@@ -183,7 +183,7 @@
     <h2>🗂️ पुराने लेख</h2>
     <div id="histlist"><p class="hint">अभी कोई पुराना लेख नहीं है।</p></div>
     <button class="btn btn-wa" id="epaperbtn" style="margin-top:16px">📰 चुने हुए लेखों से न्याय e-paper बनाइए</button>
-    <p class="hint">हफ़्ते के अपने पसंदीदा लेख ऊपर ☑️ से चुनिए — अख़बार जैसा PDF बन जाएगा।</p>
+    <p class="hint">हफ़्ते के अपने पसंदीदा लेख ऊपर ☑️ से चुनिए — अख़बार जैसा PDF बन जाएगा। किसी लेख में बदलाव करना हो तो पहले उसे «फिर खोलें» से खोलकर ✏️ या ✍️ से सुधार लीजिए — e-paper में अपने-आप वही आएगा; फिर 📰 बटन दोबारा दबाइए।</p>
     <div id="epaperout" style="display:none">
       <img id="epaperprev" alt="e-paper" style="width:100%;border:1.5px solid var(--line);border-radius:10px;margin-top:12px">
       <div class="btnrow">
@@ -220,7 +220,11 @@
 
     <h2 style="margin-top:24px">लेख पढ़िए</h2>
     <div id="lekh"></div>
-    <button class="btn btn-line" id="speakbtn">🔊 लेख सुनिए</button>
+    <textarea id="lekhedit" style="display:none;min-height:320px;font-size:19px"></textarea>
+    <div class="btnrow">
+      <button class="btn btn-line" id="speakbtn">🔊 लेख सुनिए</button>
+      <button class="btn btn-line" id="handedit">✍️ ख़ुद ठीक करें</button>
+    </div>
 
     <div class="editbox">
       <h2>✏️ कुछ बदलवाना हो तो बताइए</h2>
@@ -434,6 +438,7 @@ let selHeadline = 0;
 let imgDataUrl = null;
 let rawImg = null;
 let lastFacts = "";
+let currentHistIdx = 0;
 
 function show(el, on) { el.style.display = on ? "block" : "none"; }
 function toggle(el) { show(el, getComputedStyle(el).display === "none"); }
@@ -927,8 +932,8 @@ function saveHistory(topic, r) {
 function updateHistoryTop(patch) {
   try {
     const h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
-    if (!h.length) return;
-    Object.assign(h[0], patch);
+    if (!h[currentHistIdx]) return;
+    Object.assign(h[currentHistIdx], patch);
     localStorage.setItem(HIST_KEY, JSON.stringify(h));
   } catch (e) {}
 }
@@ -973,10 +978,12 @@ function renderHistory() {
     b.className = "chip";
     b.textContent = "फिर खोलें";
     b.onclick = () => {
+      void 0;
       convo = [
         { role: "user", content: "विषय: " + item.topic },
         { role: "assistant", content: JSON.stringify(item.r) }
       ];
+      currentHistIdx = idx;
       renderResult(item.r);
       $("factsbox").style.display = "none";
       show($("histpanel"), false);
@@ -1219,6 +1226,7 @@ async function generate() {
     convo.push({ role: "assistant", content: raw });
     progress(false);
     renderResult(r);
+    currentHistIdx = 0;
     $("factslist").textContent = lastFacts || "";
     $("factsbox").style.display = lastFacts ? "block" : "none";
     saveHistory(topic, r);
@@ -1385,6 +1393,28 @@ async function saveSettings() {
 $("gobtn").onclick = generate;
 $("newsbtn").onclick = suggestTopics;
 $("speakbtn").onclick = speakArticle;
+$("handedit").onclick = () => {
+  if (!current) return;
+  const ta = $("lekhedit");
+  if (getComputedStyle(ta).display === "none") {
+    ta.value = current.lekh;
+    show(ta, true);
+    show($("lekh"), false);
+    $("handedit").textContent = "✔️ हो गया — save कीजिए";
+  } else {
+    current.lekh = ta.value.trim();
+    show(ta, false);
+    $("lekh").textContent = current.lekh;
+    show($("lekh"), true);
+    updateHistoryTop({ r: current });
+    convo.push(
+      { role: "user", content: "मैंने लेख में हाथ से सुधार किए हैं। अद्यतन (final) लेख यह है — आगे के सुधार इसी पर करें:" },
+      { role: "assistant", content: JSON.stringify(current) }
+    );
+    $("handedit").textContent = "✍️ ख़ुद ठीक करें";
+    note("ok", "✅ आपका सुधार save हो गया — WhatsApp और e-paper दोनों में यही जाएगा।");
+  }
+};
 $("savebtn").onclick = saveSettings;
 $("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
 $("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
