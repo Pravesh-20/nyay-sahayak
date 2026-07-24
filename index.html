@@ -228,8 +228,11 @@
       <button class="btn btn-line" id="reimg">🔁 दूसरा चित्र</button>
       <button class="btn btn-line" id="saveimg">💾 चित्र सेव</button>
     </div>
-    <textarea id="imgfix" placeholder="चित्र में क्या बदलें? जैसे: बारिश हटाओ, लोग जोड़ दो, शाम का समय कर दो" style="margin-top:10px;min-height:56px"></textarea>
-    <button class="btn btn-line" id="imgfixbtn">🖌️ चित्र में यह बदलाव कीजिए</button>
+    <textarea id="imgfix" placeholder="चित्र के बारे में अपनी बात लिखिए —\nबदलाव: बारिश हटाओ, शाम कर दो…\nया नई कल्पना: झील किनारे अकेला बैठा बूढ़ा आदमी…" style="margin-top:10px;min-height:72px"></textarea>
+    <div class="btnrow">
+      <button class="btn btn-line" id="imgfixbtn">🖌️ इसी चित्र में बदलाव</button>
+      <button class="btn btn-line" id="newimgbtn">🆕 मेरी बात से नया चित्र</button>
+    </div>
     <button class="btn btn-line" id="gptimg">🎨 या ChatGPT में बनवाइए — prompt कॉपी होगा</button>
     <label>चित्र के साथ जाने वाला caption</label>
     <div id="caption"></div>
@@ -619,6 +622,56 @@ function callGeminiEdit(b64, mime, instruction) {
   ], cfg.gmodel);
 }
 
+async function geminiPlainText(prompt, model, tried) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": cfg.gkey },
+    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] })
+  });
+  if (res.status === 404 || res.status === 429) {
+    tried = (tried || []).concat([model]);
+    if (tried.length <= 3) {
+      const next = (await rankedModels(false)).find(m => tried.indexOf(m) === -1);
+      if (next) return geminiPlainText(prompt, next, tried);
+    }
+  }
+  if (!res.ok) throw new Error("plain-text " + res.status);
+  const data = await res.json();
+  const cand = data.candidates && data.candidates[0];
+  return cand && cand.content && cand.content.parts ? cand.content.parts.map(p => p.text || "").join("").trim() : "";
+}
+
+async function hindiToImagePrompt(desc) {
+  const SUFFIX = "hyper-detailed photorealistic editorial illustration, dramatic emotional cinematic lighting, Indian setting, 4:3 format";
+  try {
+    const p = await geminiPlainText("Convert this Hindi/English image idea into ONE rich English image-generation prompt (60-90 words): central symbolic scene, foreground and background elements, mood, cinematic lighting, camera angle. No real person's face. Reply with ONLY the prompt text, nothing else.\n\nIdea: " + desc + "\n\nEnd the prompt with: " + SUFFIX);
+    if (p && p.length > 30) return p;
+  } catch (e) {}
+  return desc + ", " + SUFFIX;
+}
+
+async function newImageFromDesc() {
+  const desc = $("imgfix").value.trim();
+  if (!desc) { note("ok", "पहले लिखिए कैसा चित्र चाहिए — जैसे: झील किनारे अकेला बैठा बूढ़ा आदमी, डूबता सूरज।"); return; }
+  $("imgfix").value = "";
+  clearNote();
+  show($("genimg"), false);
+  show($("imgwait"), true);
+  try {
+    const engPrompt = await hindiToImagePrompt(desc);
+    if (current) current.image_prompt = engPrompt;
+    imgDataUrl = await callGemini(engPrompt);
+    $("genimg").src = imgDataUrl;
+    note("ok", "✅ आपकी कल्पना का चित्र तैयार — पसंद न आए तो 🔁 या फिर से बताइए।");
+  } catch (e) {
+    const [msg, detail] = String(e.message).split("||");
+    note("err", msg, detail);
+  } finally {
+    show($("imgwait"), false);
+    show($("genimg"), true);
+  }
+}
+
 async function editImage() {
   const instr = $("imgfix").value.trim();
   if (!instr) { note("ok", "पहले लिखिए चित्र में क्या बदलना है — जैसे: बारिश हटाओ।"); return; }
@@ -634,7 +687,7 @@ async function editImage() {
     note("ok", "✅ चित्र सुधर गया — नीचे देखिए।");
   } catch (e) {
     try {
-      imgDataUrl = await pollinationsImage((current ? current.image_prompt : "") + ". Additionally: " + instr);
+      imgDataUrl = await pollinationsImage(await hindiToImagePrompt((current ? current.image_prompt : "") + ". बदलाव: " + instr));
       $("genimg").src = imgDataUrl;
       note("ok", "✅ मुफ़्त engine से नया सुधरा चित्र बना दिया — नीचे देखिए।");
     } catch (e2) {
@@ -874,6 +927,7 @@ $("fixbtn").onclick = () => {
 $("saveimg").onclick = saveImage;
 $("reimg").onclick = () => makeImage("\nA different composition and camera angle this time.");
 $("imgfixbtn").onclick = editImage;
+$("newimgbtn").onclick = newImageFromDesc;
 $("gptimg").onclick = async () => {
   if (!current) return;
   await copy(current.image_prompt, "🎨 Image prompt कॉपी हो गया — ChatGPT खोलकर paste कीजिए, चित्र बनाकर 📥 save कीजिए।");
