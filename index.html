@@ -182,6 +182,15 @@
   <div class="card" id="histpanel">
     <h2>🗂️ पुराने लेख</h2>
     <div id="histlist"><p class="hint">अभी कोई पुराना लेख नहीं है।</p></div>
+    <button class="btn btn-wa" id="epaperbtn" style="margin-top:16px">📰 चुने हुए लेखों से न्याय e-paper बनाइए</button>
+    <p class="hint">हफ़्ते के अपने पसंदीदा लेख ऊपर ☑️ से चुनिए — अख़बार जैसा PDF बन जाएगा।</p>
+    <div id="epaperout" style="display:none">
+      <img id="epaperprev" alt="e-paper" style="width:100%;border:1.5px solid var(--line);border-radius:10px;margin-top:12px">
+      <div class="btnrow">
+        <button class="btn btn-wa" id="epsharebtn">📤 e-paper भेजिए</button>
+        <button class="btn btn-line" id="epsavebtn">💾 PDF सेव</button>
+      </div>
+    </div>
   </div>
 
   <!-- MAIN INPUT -->
@@ -785,6 +794,7 @@ async function newImageFromDesc() {
     rawImg = await callGemini(engPrompt);
     imgDataUrl = await composeWithBanner(rawImg);
     $("genimg").src = imgDataUrl;
+    saveThumbToHistory();
     note("ok", "✅ आपकी कल्पना का चित्र तैयार — पसंद न आए तो 🔁 या फिर से बताइए।");
   } catch (e) {
     const [msg, detail] = String(e.message).split("||");
@@ -808,12 +818,14 @@ async function editImage() {
     rawImg = await callGeminiEdit(prev.split(",")[1], mime, instr);
     imgDataUrl = await composeWithBanner(rawImg);
     $("genimg").src = imgDataUrl;
+    saveThumbToHistory();
     note("ok", "✅ चित्र सुधर गया — नीचे देखिए।");
   } catch (e) {
     try {
       rawImg = await pollinationsImage(await hindiToImagePrompt((current ? current.image_prompt : "") + ". बदलाव: " + instr));
       imgDataUrl = await composeWithBanner(rawImg);
       $("genimg").src = imgDataUrl;
+      saveThumbToHistory();
       note("ok", "✅ मुफ़्त engine से नया सुधरा चित्र बना दिया — नीचे देखिए।");
     } catch (e2) {
       imgDataUrl = prev;
@@ -894,6 +906,7 @@ async function makeImage(extra) {
     imgDataUrl = await composeWithBanner(rawImg);
     $("genimg").src = imgDataUrl;
     show($("genimg"), true);
+    saveThumbToHistory();
   } catch (e) {
     const [msg, detail] = String(e.message).split("||");
     note("err", msg, detail);
@@ -907,8 +920,34 @@ function saveHistory(topic, r) {
   try {
     const h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
     h.unshift({ d: new Date().toLocaleDateString("hi-IN"), topic: topic, r: r });
-    localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 30)));
+    localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 20)));
   } catch (e) {}
+}
+
+function updateHistoryTop(patch) {
+  try {
+    const h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
+    if (!h.length) return;
+    Object.assign(h[0], patch);
+    localStorage.setItem(HIST_KEY, JSON.stringify(h));
+  } catch (e) {}
+}
+
+async function shrinkImage(dataUrl, maxW) {
+  try {
+    const im = await loadImgEl(dataUrl);
+    const w = Math.min(maxW, im.naturalWidth);
+    const hh = Math.round(im.naturalHeight * w / im.naturalWidth);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = hh;
+    c.getContext("2d").drawImage(im, 0, 0, w, hh);
+    return c.toDataURL("image/jpeg", 0.6);
+  } catch (e) { return ""; }
+}
+
+function saveThumbToHistory() {
+  if (!rawImg) return;
+  shrinkImage(rawImg, 480).then(function (th) { if (th) updateHistoryTop({ img: th }); });
 }
 function renderHistory() {
   const box = $("histlist");
@@ -916,11 +955,17 @@ function renderHistory() {
   try { h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); } catch (e) {}
   if (!h.length) { box.innerHTML = "<p class='hint'>अभी कोई पुराना लेख नहीं है।</p>"; return; }
   box.innerHTML = "";
-  h.forEach(item => {
+  h.forEach((item, idx) => {
     const d = document.createElement("details");
     d.className = "hist";
     const s = document.createElement("summary");
-    s.textContent = (item.r.shirshak && item.r.shirshak[0]) || item.topic;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "epsel";
+    cb.dataset.i = String(idx);
+    cb.style.cssText = "transform:scale(1.5);margin-right:12px;accent-color:#5B21B6;vertical-align:middle";
+    cb.onclick = function (ev) { ev.stopPropagation(); };
+    s.append(cb, (item.r.shirshak && item.r.shirshak[0]) || item.topic);
     const m = document.createElement("div");
     m.className = "muted";
     m.textContent = item.d + " · " + item.topic;
@@ -941,6 +986,214 @@ function renderHistory() {
     d.append(s, m, b);
     box.append(d);
   });
+}
+
+/* ---------- न्याय e-paper (canvas newspaper -> PDF) ---------- */
+function wrapText(g, text, maxW) {
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let cur = "";
+  words.forEach(function (w) {
+    const trial = cur ? cur + " " + w : w;
+    if (g.measureText(trial).width > maxW && cur) { lines.push(cur); cur = w; }
+    else cur = trial;
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+async function buildEpaper(items) {
+  const W = 1240, H = 1754, M = 76, GUT = 40;
+  const colW = Math.floor((W - M * 2 - GUT) / 2);
+  const BOT = H - 84;
+  const F = '"Nirmala UI","Kohinoor Devanagari","Devanagari Sangam MN","Noto Sans Devanagari",sans-serif';
+  const imgs = {};
+  await Promise.all(items.map(async function (it, i) {
+    if (it.img) { try { imgs[i] = await loadImgEl(it.img); } catch (e) {} }
+  }));
+  const pages = [];
+  let g = null, y = 0, col = 0, topY = 0;
+  function newPage() {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    g = c.getContext("2d");
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, W, H);
+    pages.push(c);
+    if (pages.length === 1) {
+      g.strokeStyle = "#5B21B6"; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(M, 56); g.lineTo(W - M, 56); g.stroke();
+      g.fillStyle = "#5B21B6"; g.textAlign = "center";
+      g.font = "bold 120px " + F;
+      g.fillText("न्याय", W / 2, 192);
+      g.fillStyle = "#4a4458"; g.font = "26px " + F;
+      g.fillText("एआई युग का नया समाचार पत्र", W / 2, 238);
+      g.textAlign = "left";
+      g.fillStyle = "#333"; g.font = "22px " + F;
+      g.fillText(new Date().toLocaleDateString("hi-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + " · अजमेर", M, 288);
+      g.textAlign = "right";
+      g.fillText("संपादक: रुक्मा पुत्र ऋषि", W - M, 288);
+      g.textAlign = "left";
+      g.lineWidth = 2; g.beginPath(); g.moveTo(M, 308); g.lineTo(W - M, 308); g.stroke();
+      g.lineWidth = 1; g.beginPath(); g.moveTo(M, 314); g.lineTo(W - M, 314); g.stroke();
+      topY = 354;
+    } else {
+      g.fillStyle = "#5B21B6"; g.font = "bold 36px " + F;
+      g.fillText("न्याय", M, 72);
+      g.fillStyle = "#666"; g.font = "20px " + F; g.textAlign = "right";
+      g.fillText(new Date().toLocaleDateString("hi-IN"), W - M, 72);
+      g.textAlign = "left";
+      g.strokeStyle = "#5B21B6"; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(M, 88); g.lineTo(W - M, 88); g.stroke();
+      g.lineWidth = 1;
+      topY = 128;
+    }
+    g.fillStyle = "#6E6485"; g.font = "20px " + F; g.textAlign = "center";
+    g.fillText("— पृष्ठ " + pages.length + " —", W / 2, H - 40);
+    g.textAlign = "left";
+    y = topY; col = 0;
+  }
+  function colX() { return M + col * (colW + GUT); }
+  function ensure(need) {
+    if (y + need <= BOT) return;
+    if (col === 0) { col = 1; y = topY; if (y + need <= BOT) return; }
+    newPage();
+  }
+  function line(txt, font, color, lh) {
+    ensure(lh);
+    g.font = font; g.fillStyle = color;
+    g.fillText(txt, colX(), y + lh - 9);
+    y += lh;
+  }
+  function block(text, font, color, lh) {
+    String(text).split(/\n+/).forEach(function (para, pi) {
+      if (!para.trim()) return;
+      if (pi) y += 10;
+      g.font = font;
+      wrapText(g, para.trim(), colW).forEach(function (l) { line(l, font, color, lh); });
+    });
+  }
+  newPage();
+  items.forEach(function (it, i) {
+    const head = (it.r.shirshak && it.r.shirshak[0]) || it.topic || "";
+    const body = String(it.r.lekh || "").replace(/[*_]/g, "");
+    ensure(150);
+    y += 4;
+    block(head, "bold 32px " + F, "#141414", 44);
+    ensure(20);
+    g.strokeStyle = "#5B21B6"; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(colX(), y + 7); g.lineTo(colX() + 92, y + 7); g.stroke();
+    g.lineWidth = 1;
+    y += 22;
+    line(it.d || "", "19px " + F, "#7a7a7a", 27);
+    y += 6;
+    const im = imgs[i];
+    if (im) {
+      const ih = Math.min(360, Math.round(im.naturalHeight * colW / im.naturalWidth));
+      ensure(ih + 16);
+      g.drawImage(im, colX(), y, colW, ih);
+      g.strokeStyle = "#dddddd";
+      g.strokeRect(colX(), y, colW, ih);
+      y += ih + 16;
+    }
+    block(body, "22px " + F, "#1c1c1c", 32);
+    y += 14;
+    ensure(24);
+    g.strokeStyle = "#cfc8e2";
+    g.beginPath(); g.moveTo(colX(), y); g.lineTo(colX() + colW, y); g.stroke();
+    y += 28;
+  });
+  return pages;
+}
+
+function canvasesToPdf(canvases) {
+  const chunks = [];
+  let off = 0;
+  const offsets = [];
+  function enc(s) {
+    const a = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i) & 0xff;
+    return a;
+  }
+  function push(x) {
+    const a = typeof x === "string" ? enc(x) : x;
+    chunks.push(a);
+    off += a.length;
+  }
+  function obj(n, body) { offsets[n] = off; push(n + " 0 obj\n" + body + "\nendobj\n"); }
+  const jpegs = canvases.map(function (c) {
+    const b = atob(c.toDataURL("image/jpeg", 0.85).split(",")[1]);
+    const a = new Uint8Array(b.length);
+    for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    return a;
+  });
+  push("%PDF-1.4\n");
+  const N = jpegs.length;
+  const kids = jpegs.map(function (_, i) { return (3 + i * 3) + " 0 R"; }).join(" ");
+  obj(1, "<</Type/Catalog/Pages 2 0 R>>");
+  obj(2, "<</Type/Pages/Kids[" + kids + "]/Count " + N + ">>");
+  jpegs.forEach(function (jp, i) {
+    const p = 3 + i * 3, im = p + 1, ct = p + 2;
+    obj(p, "<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</XObject<</I" + i + " " + im + " 0 R>>>>/Contents " + ct + " 0 R>>");
+    offsets[im] = off;
+    push(im + " 0 obj\n<</Type/XObject/Subtype/Image/Width " + canvases[i].width + "/Height " + canvases[i].height + "/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length " + jp.length + ">>\nstream\n");
+    push(jp);
+    push("\nendstream\nendobj\n");
+    const cs = "q 595 0 0 842 0 0 cm /I" + i + " Do Q";
+    obj(ct, "<</Length " + cs.length + ">>\nstream\n" + cs + "\nendstream");
+  });
+  const xrefOff = off;
+  const total = 3 + N * 3;
+  let xref = "xref\n0 " + total + "\n0000000000 65535 f \n";
+  for (let n = 1; n < total; n++) xref += String(offsets[n]).padStart(10, "0") + " 00000 n \n";
+  push(xref + "trailer\n<</Size " + total + "/Root 1 0 R>>\nstartxref\n" + xrefOff + "\n%%EOF");
+  return new Blob(chunks, { type: "application/pdf" });
+}
+
+let epaperBlob = null;
+async function makeEpaper() {
+  const checked = Array.prototype.slice.call(document.querySelectorAll(".epsel:checked")).map(function (c) { return parseInt(c.dataset.i, 10); });
+  if (!checked.length) { note("ok", "पहले ☑️ से अपने पसंदीदा लेख चुनिए — फिर यह बटन दबाइए।"); return; }
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); } catch (e) {}
+  const items = checked.map(function (i) { return h[i]; }).filter(Boolean);
+  if (!items.length) return;
+  $("epaperbtn").disabled = true;
+  $("epaperbtn").textContent = "📰 e-paper बन रहा है…";
+  try {
+    const pages = await buildEpaper(items);
+    epaperBlob = canvasesToPdf(pages);
+    $("epaperprev").src = pages[0].toDataURL("image/jpeg", 0.8);
+    show($("epaperout"), true);
+    note("ok", "📰 न्याय e-paper तैयार (" + pages.length + " पृष्ठ, " + items.length + " लेख) — नीचे 📤 से भेजिए।");
+  } catch (e) {
+    note("err", "e-paper नहीं बन पाया — फिर कोशिश करें।||" + (e && e.message));
+  } finally {
+    $("epaperbtn").disabled = false;
+    $("epaperbtn").textContent = "📰 चुने हुए लेखों से न्याय e-paper बनाइए";
+  }
+}
+async function shareEpaper() {
+  if (!epaperBlob) return;
+  const f = new File([epaperBlob], "nyay-epaper.pdf", { type: "application/pdf" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [f] })) {
+      await navigator.share({ files: [f], text: "🗞️ न्याय e-paper" });
+      return;
+    }
+    throw new Error("no-share");
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+    saveEpaper();
+  }
+}
+function saveEpaper() {
+  if (!epaperBlob) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(epaperBlob);
+  a.download = "nyay-epaper.pdf";
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+  note("ok", "💾 PDF download हो गया — WhatsApp में 📎 document से भेज सकते हैं।");
 }
 
 /* ---------- actions ---------- */
@@ -990,6 +1243,7 @@ async function applyFix(instruction) {
     const r = parseJSON(raw);
     convo.push({ role: "assistant", content: raw });
     renderResult(r);
+    updateHistoryTop({ r: r });
     note("ok", "✅ सुधार हो गया — नीचे देखिए।");
   } catch (e) {
     convo.pop();
@@ -1134,6 +1388,9 @@ $("speakbtn").onclick = speakArticle;
 $("savebtn").onclick = saveSettings;
 $("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
 $("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
+$("epaperbtn").onclick = makeEpaper;
+$("epsharebtn").onclick = shareEpaper;
+$("epsavebtn").onclick = saveEpaper;
 $("shareall").onclick = shareEverything;
 $("sharetext").onclick = shareTextOnly;
 $("shareimg").onclick = shareImage;
@@ -1164,6 +1421,7 @@ $("upimg").onchange = async () => {
     rawImg = dataUrl;
     imgDataUrl = await composeWithBanner(dataUrl);
     $("genimg").src = imgDataUrl;
+    saveThumbToHistory();
     note("ok", "✅ आपका चित्र न्याय banner के साथ तैयार — अब 📤 से भेज दीजिए।");
   } catch (e) {
     note("err", "चित्र नहीं लग पाया — फिर कोशिश कीजिए।");
