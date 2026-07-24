@@ -192,6 +192,8 @@
     <div id="miclive">🔴 सुन रहा हूँ… बोलिए। रोकने के लिए ऊपर का बटन फिर दबाइए।</div>
     <button class="btn btn-main" id="gobtn">✍️ लेख और चित्र बनाइए</button>
     <p class="hint">कुछ ही देर में तैयार लेख, 3 शीर्षक, चित्र और caption — सब एक साथ मिलेगा।</p>
+    <button class="btn btn-line" id="newsbtn" style="margin-top:16px">📰 आज क्या लिखें? — ताज़ा मुद्दे दिखाइए</button>
+    <div id="newschips" class="chips"></div>
   </div>
 
   <!-- PROGRESS -->
@@ -209,6 +211,7 @@
 
     <h2 style="margin-top:24px">लेख पढ़िए</h2>
     <div id="lekh"></div>
+    <button class="btn btn-line" id="speakbtn">🔊 लेख सुनिए</button>
 
     <div class="editbox">
       <h2>✏️ कुछ बदलवाना हो तो बताइए</h2>
@@ -216,10 +219,16 @@
         <button class="chip" data-fix="लेख को और भावुक और मार्मिक बनाइए">💜 और भावुक</button>
         <button class="chip" data-fix="लेख को छोटा कीजिए — लगभग 250 शब्द">✂️ छोटा करो</button>
         <button class="chip" data-fix="व्यंग्य और तीखा कीजिए">🌶️ और तीखा</button>
+        <button class="chip" data-fix="एक कठोर मुख्य-संपादक की तरह इस लेख की पूरी समीक्षा करके इसे सुधारिए: (1) तथ्य/आँकड़े दी गई ताज़ा जानकारी से मेल खाएँ, (2) दोहराव और कमज़ोर वाक्य कसें, (3) मानहानि-जोखिम जाँचें — किसी व्यक्ति/संस्था पर बिना प्रमाण का आरोप तथ्य की तरह न लिखा हो; ज़रूरत हो तो उसे सवाल या आरोप की भाषा में बदलें, (4) प्रवाह सुधारें और अंत का पंच मज़बूत करें। शैली और आवाज़ वही रखें।">🧐 संपादक से जँचवाइए</button>
       </div>
       <textarea id="fixinput" placeholder="अपने शब्दों में लिखिए — जैसे: अंत में एक सवाल जोड़ दो"></textarea>
       <button class="btn btn-line" id="fixbtn">✅ यह सुधार कीजिए</button>
     </div>
+
+    <details id="factsbox" style="display:none;margin-top:16px">
+      <summary style="cursor:pointer;font-weight:700;color:var(--brand)">🔎 खोजे गए ताज़ा तथ्य — छूकर देखिए (जाँच के लिए)</summary>
+      <div id="factslist" style="white-space:pre-wrap;font-size:16px;margin-top:8px;color:var(--muted)"></div>
+    </details>
 
     <h2 style="margin-top:24px">चित्र</h2>
     <div id="imgbox">
@@ -415,6 +424,7 @@ let current = null;      // latest parsed result
 let selHeadline = 0;
 let imgDataUrl = null;
 let rawImg = null;
+let lastFacts = "";
 
 function show(el, on) { el.style.display = on ? "block" : "none"; }
 function toggle(el) { show(el, getComputedStyle(el).display === "none"); }
@@ -519,6 +529,75 @@ function persistModel(field, value) {
 }
 
 /* ---------- Gemini (article text — the free default) ---------- */
+async function groundedCall(prompt, model, tried) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": cfg.gkey },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }]
+    })
+  });
+  if (res.status === 404 || res.status === 429) {
+    tried = (tried || []).concat([model]);
+    if (tried.length <= 2) {
+      const next = (await rankedModels(false)).find(m => tried.indexOf(m) === -1);
+      if (next) return groundedCall(prompt, next, tried);
+    }
+    return "";
+  }
+  if (!res.ok) return "";
+  const data = await res.json().catch(function () { return null; });
+  const cand = data && data.candidates && data.candidates[0];
+  return cand && cand.content && cand.content.parts ? cand.content.parts.map(p => p.text || "").join("").trim() : "";
+}
+
+async function suggestTopics() {
+  if (!cfg.gkey) { fillSettings(); show($("settings"), true); return; }
+  $("newsbtn").disabled = true;
+  $("newsbtn").textContent = "🔎 आज के मुद्दे खोजे जा रहे हैं…";
+  try {
+    const txt = await groundedCall("Search today's top Indian news. आज के 6 सबसे चर्चित मुद्दे दीजिए जिन पर हिन्दी अख़बार का संपादकीय या व्यंग्य लिखा जा सके — 4 राष्ट्रीय और 2 राजस्थान/अजमेर के। हर मुद्दा नई पंक्ति पर, 8-14 शब्द, कोई numbering या bullet नहीं।", cfg.tmodel);
+    const lines = String(txt).split("\n").map(s => s.replace(/^[\s\-•*\d.\)]+/, "").trim()).filter(s => s.length > 10).slice(0, 8);
+    const box = $("newschips");
+    box.innerHTML = "";
+    lines.forEach(l => {
+      const b = document.createElement("button");
+      b.className = "chip";
+      b.textContent = l;
+      b.onclick = () => { $("topic").value = l; window.scrollTo({ top: 0, behavior: "smooth" }); $("topic").focus(); };
+      box.append(b);
+    });
+    if (!lines.length) note("ok", "अभी मुद्दे नहीं मिल पाए — विषय ख़ुद लिखिए या बोलिए।");
+  } catch (e) {
+    note("ok", "अभी मुद्दे नहीं मिल पाए — विषय ख़ुद लिखिए या बोलिए।");
+  } finally {
+    $("newsbtn").disabled = false;
+    $("newsbtn").textContent = "📰 आज क्या लिखें? — ताज़ा मुद्दे दिखाइए";
+  }
+}
+
+let speaking = false;
+function speakArticle() {
+  if (!current || !window.speechSynthesis) return;
+  if (speaking) {
+    speechSynthesis.cancel();
+    speaking = false;
+    $("speakbtn").textContent = "🔊 लेख सुनिए";
+    return;
+  }
+  const clean = (chosenHeadline() + "। " + current.lekh).replace(/[*_~]/g, "").replace(/⚠️\[[^\]]*\]/g, " (यहाँ जाँच करनी है) ");
+  const u = new SpeechSynthesisUtterance(clean);
+  u.lang = "hi-IN";
+  u.rate = 0.95;
+  const v = speechSynthesis.getVoices().find(x => x.lang && x.lang.indexOf("hi") === 0);
+  if (v) u.voice = v;
+  u.onend = u.onerror = function () { speaking = false; $("speakbtn").textContent = "🔊 लेख सुनिए"; };
+  speaking = true;
+  $("speakbtn").textContent = "⏹️ बस, रोकिए";
+  speechSynthesis.speak(u);
+}
+
 async function researchFacts(topic, model, tried) {
   const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
     method: "POST",
@@ -750,6 +829,9 @@ async function editImage() {
 
 /* ---------- render ---------- */
 function renderResult(r) {
+  try { speechSynthesis.cancel(); } catch (e) {}
+  speaking = false;
+  if ($("speakbtn")) $("speakbtn").textContent = "🔊 लेख सुनिए";
   current = r;
   selHeadline = 0;
   const hbox = $("headlines");
@@ -851,6 +933,7 @@ function renderHistory() {
         { role: "assistant", content: JSON.stringify(item.r) }
       ];
       renderResult(item.r);
+      $("factsbox").style.display = "none";
       show($("histpanel"), false);
       makeImage();
       $("result").scrollIntoView({ behavior: "smooth" });
@@ -871,9 +954,10 @@ async function generate() {
   $("gobtn").disabled = true;
   progress(true, ["🔎 ताज़ा जानकारी खोजी जा रही है…", "संपादक जी लिख रहे हैं…", "शीर्षक सोचे जा रहे हैं…", "बस थोड़ी देर और…"]);
   let userMsg = "आज का विषय / मेरी कच्ची बात:\n" + topic;
+  lastFacts = "";
   try {
-    const facts = await researchFacts(topic, cfg.tmodel);
-    if (facts) userMsg += "\n\n[🔎 आज की खोजी हुई ताज़ा जानकारी — लेख के तथ्य केवल इन्हीं पर आधारित रखें]\n" + facts;
+    lastFacts = await researchFacts(topic, cfg.tmodel);
+    if (lastFacts) userMsg += "\n\n[🔎 आज की खोजी हुई ताज़ा जानकारी — लेख के तथ्य केवल इन्हीं पर आधारित रखें]\n" + lastFacts;
   } catch (e) {}
   convo = [{ role: "user", content: userMsg }];
   try {
@@ -882,6 +966,8 @@ async function generate() {
     convo.push({ role: "assistant", content: raw });
     progress(false);
     renderResult(r);
+    $("factslist").textContent = lastFacts || "";
+    $("factsbox").style.display = lastFacts ? "block" : "none";
     saveHistory(topic, r);
     $("result").scrollIntoView({ behavior: "smooth" });
     await makeImage();
@@ -921,24 +1007,37 @@ function articleText() {
   return chosenHeadline() + "\n\n" + (current ? current.lekh : "");
 }
 
+function dataUrlToFile(dataUrl, name) {
+  const m = String(dataUrl).match(/^data:([^;]+);base64,(.*)$/);
+  const mime = m ? m[1] : "image/jpeg";
+  const bin = atob(m ? m[2] : String(dataUrl).split(",")[1]);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new File([arr], name, { type: mime });
+}
+
+function openWhatsAppWithText(text) {
+  try { navigator.clipboard.writeText(text).catch(function () {}); } catch (e) {}
+  window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
+}
+
 async function shareEverything() {
   if (!current) return;
   const text = articleText();
-  try {
-    if (imgDataUrl && navigator.canShare) {
-      const blob = await (await fetch(imgDataUrl)).blob();
-      const file = new File([blob], "nyay.jpg", { type: blob.type || "image/jpeg" });
-      if (navigator.canShare({ files: [file] })) {
+  if (imgDataUrl) {
+    try {
+      const file = dataUrlToFile(imgDataUrl, "nyay.jpg");
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], text: text });
         return;
       }
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
     }
-    if (navigator.share) { await navigator.share({ text: text }); return; }
-    throw new Error("no-share");
-  } catch (e) {
-    if (e.name === "AbortError") return;
-    await copy(text, "📋 लेख कॉपी हो गया — WhatsApp में paste कीजिए; चित्र 💾 सेव से भेज दीजिए।");
   }
+  if (imgDataUrl) saveImage();
+  openWhatsAppWithText(text);
+  note("ok", "💻 इस browser में चित्र+लेख एक साथ नहीं जा सकते, इसलिए: चित्र download हो गया और WhatsApp खुल गया है — group चुनकर लेख भेजिए, फिर 📎 से चित्र लगा दीजिए। 📱 फ़ोन पर यह एक ही click में हो जाता है।");
 }
 
 async function shareTextOnly() {
@@ -949,7 +1048,8 @@ async function shareTextOnly() {
     throw new Error("no-share");
   } catch (e) {
     if (e.name === "AbortError") return;
-    await copy(text, "📋 लेख कॉपी हो गया — अब WhatsApp खोलकर group में paste कर दीजिए।");
+    openWhatsAppWithText(text);
+    note("ok", "WhatsApp खुल गया है — लेख साथ में तैयार है, group चुनकर भेज दीजिए।");
   }
 }
 
@@ -1029,6 +1129,8 @@ async function saveSettings() {
 
 /* ---------- wire up ---------- */
 $("gobtn").onclick = generate;
+$("newsbtn").onclick = suggestTopics;
+$("speakbtn").onclick = speakArticle;
 $("savebtn").onclick = saveSettings;
 $("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
 $("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
