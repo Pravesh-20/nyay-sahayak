@@ -1027,268 +1027,346 @@ function parseStyledParas(text) {
   return paras;
 }
 
-async function buildEpaper(items) {
-  const W = 1240, H = 1754, M = 64;
+function isSignaturePara(words) {
+  const plain = words.map(function (w) { return w.w; }).join(" ");
+  return plain.charAt(0) === "@" || /^[—-]?\s*रुक्मा/.test(plain);
+}
+
+/* AI page-designer: which article leads, kickers, pull-quote, highlight */
+async function designPlan(items) {
+  const listing = items.map(function (it, i) {
+    const words = String(it.r.lekh || "").split(/\s+/).length;
+    return i + ': "' + ((it.r.shirshak && it.r.shirshak[0]) || it.topic) + '" (' + words + " शब्द" + (it.img ? ", चित्र है" : "") + ")";
+  }).join("\n");
+  const prompt = 'तुम एक हिन्दी अख़बार (दैनिक भास्कर जैसी शैली) के मुख्य page-designer हो। पहले पन्ने के लिए लेख:\n' + listing +
+    '\n\nकेवल यह JSON दो, और कुछ नहीं:\n{"lead": index, "left": index, "right": index, "briefs": [index,...], "kicker": {"0": "लेबल"}, "pull": {"0": "lead लेख की एक छोटी दमदार पंक्ति"}, "highlight": "lead की headline का सबसे ज़ोरदार एक शब्द"}\n' +
+    'नियम: lead = सबसे दमदार/चित्र वाला लेख; left = दूसरा चित्र वाला; right = तीसरा; बाक़ी सब briefs में। हर index अलग हो। kicker हर index के लिए 1-2 शब्द (जैसे संपादकीय, व्यंग्य, विशेष)।';
+  const raw = await geminiPlainText(prompt, cfg.tmodel);
+  return parseJSON(raw);
+}
+
+function normalizePlan(items, plan) {
+  const n = items.length;
+  const used = {};
+  function take(v) {
+    v = parseInt(v, 10);
+    if (isNaN(v) || v < 0 || v >= n || used[v]) return -1;
+    used[v] = true;
+    return v;
+  }
+  const p = plan || {};
+  let lead = take(p.lead);
+  const byImg = items.map(function (it, i) { return i; }).sort(function (a, b) {
+    return ((items[b].img ? 1 : 0) - (items[a].img ? 1 : 0)) ||
+      (String(items[b].r.lekh || "").length - String(items[a].r.lekh || "").length);
+  });
+  if (lead < 0) { for (const i of byImg) if (!used[i]) { lead = i; used[i] = true; break; } }
+  let left = n > 2 ? take(p.left) : -1;
+  if (left < 0 && n > 2) { for (const i of byImg) if (!used[i]) { left = i; used[i] = true; break; } }
+  let right = n > 1 ? take(p.right) : -1;
+  if (right < 0 && n > 1) { for (const i of byImg) if (!used[i]) { right = i; used[i] = true; break; } }
+  const briefs = [];
+  (Array.isArray(p.briefs) ? p.briefs : []).forEach(function (v) { const k = take(v); if (k >= 0) briefs.push(k); });
+  for (let i = 0; i < n; i++) if (!used[i]) briefs.push(i);
+  const kick = {}, pull = {};
+  const LB = ["संपादकीय", "व्यंग्य", "विचार", "विशेष", "नज़रिया", "बात पते की"];
+  for (let i = 0; i < n; i++) {
+    kick[i] = (p.kicker && p.kicker[String(i)]) || LB[i % LB.length];
+    if (p.pull && p.pull[String(i)]) pull[i] = stripAlerts(String(p.pull[String(i)])).replace(/[*_]/g, "");
+  }
+  return {
+    lead: lead, left: left, right: right, briefs: briefs,
+    kick: kick, pull: pull,
+    highlight: String(p.highlight || "").replace(/[*_"]/g, "").trim()
+  };
+}
+
+async function buildEpaper(items, rawPlan) {
+  const W = 1240, H = 1754, M = 56, G = 26;
   const F = '"Nirmala UI","Kohinoor Devanagari","Devanagari Sangam MN","Noto Sans Devanagari",sans-serif';
-  const NCOL = 3, GUT = 34;
-  const colW = Math.floor((W - 2 * M - (NCOL - 1) * GUT) / NCOL);
-  const BOT = H - 78;
-  const BODY = 20.5, BLH = 29;
-  const INK = "#1a1a22", MUT = "#6d6680", BRAND = "#4C1D95", RULE = "#d8d2e6";
-  const fullW = W - 2 * M;
-
-  function fontOf(size, b, i) { return (i ? "italic " : "") + (b ? "bold " : "") + size + "px " + F; }
-
+  const RED = "#C21E12", INK = "#141419", MUT = "#6d6672", RULE = "#c9c4bd", YEL = "#FFE24A", BOXBG = "#F6F5F1", DARK = "#191822";
+  const BOT = H - 64;
+  const c4 = Math.floor((W - 2 * M - 3 * G) / 4);
+  const plan = normalizePlan(items, rawPlan);
   const imgs = {};
   await Promise.all(items.map(async function (it, i) {
     if (it.img) { try { imgs[i] = await loadImgEl(it.img); } catch (e) {} }
   }));
+  window.epDropped = 0;
 
-  const pages = [], meta = [];
-  let g = null, y = 0, col = 0, topY = 0;
-
-  function newPage() {
+  function attempt(s) {
+    window.epDropped = 0;
     const c = document.createElement("canvas");
     c.width = W; c.height = H;
-    g = c.getContext("2d");
+    const g = c.getContext("2d");
     g.fillStyle = "#ffffff";
     g.fillRect(0, 0, W, H);
-    pages.push(c);
-    if (pages.length === 1) {
-      const grad = g.createLinearGradient(0, 0, W, 0);
-      grad.addColorStop(0, "#1A1128"); grad.addColorStop(0.5, "#2A1B4E"); grad.addColorStop(1, "#3B2373");
-      g.fillStyle = grad;
-      g.fillRect(0, 0, W, 206);
-      g.fillStyle = "#F2C25E";
-      g.textAlign = "center";
-      g.font = "bold 116px " + F;
-      g.fillText("न्याय", W / 2, 130);
-      g.fillStyle = "#CBBFF0";
-      g.font = "24px " + F;
-      g.fillText("— एआई युग का नया समाचार पत्र —", W / 2, 176);
-      g.fillStyle = "#F4F1FA";
-      g.fillRect(0, 206, W, 46);
-      g.strokeStyle = BRAND; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(0, 252); g.lineTo(W, 252); g.stroke();
-      g.lineWidth = 1;
-      g.fillStyle = "#33304a"; g.font = "19px " + F;
-      g.textAlign = "left";
-      g.fillText(new Date().toLocaleDateString("hi-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }), M, 237);
-      g.textAlign = "center";
-      g.fillText("अजमेर", W / 2, 237);
-      g.textAlign = "right";
-      g.fillText("संपादक: रुक्मा पुत्र ऋषि", W - M, 237);
-      g.textAlign = "left";
-      topY = 290;
-    } else {
-      g.fillStyle = BRAND;
-      g.font = "bold 40px " + F;
-      g.fillText("न्याय", M, 66);
-      g.fillStyle = MUT; g.font = "19px " + F;
-      g.textAlign = "right";
-      g.fillText(new Date().toLocaleDateString("hi-IN") + " · पृष्ठ " + pages.length, W - M, 62);
-      g.textAlign = "left";
-      g.strokeStyle = BRAND; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(M, 82); g.lineTo(W - M, 82); g.stroke();
-      g.lineWidth = 1;
-      topY = 118;
-    }
-    g.strokeStyle = RULE;
-    g.beginPath(); g.moveTo(M, H - 56); g.lineTo(W - M, H - 56); g.stroke();
-    g.fillStyle = MUT; g.font = "16px " + F;
+    let fits = true;
+    const fontOf = function (size, b, i) { return (i ? "italic " : "") + (b ? "bold " : "") + Math.round(size * s) + "px " + F; };
+    const px = function (v) { return Math.round(v * s); };
+
+    /* ---- masthead (fixed, unscaled) ---- */
+    g.fillStyle = "#EFECE5";
+    g.fillRect(0, 0, W, 34);
+    g.fillStyle = "#5a544c"; g.font = "17px " + F;
     g.textAlign = "center";
-    g.fillText("न्याय · सत्य की तह तक · पृष्ठ " + pages.length, W / 2, H - 30);
+    g.fillText("सत्य की तह तक  ·  निष्पक्ष विश्लेषण  ·  डेटा आधारित पत्रकारिता", W / 2, 24);
+    g.fillStyle = RED;
+    g.font = "bold 96px " + F;
+    g.fillText("न्याय", W / 2, 128);
+    g.fillStyle = "#222"; g.font = "bold 24px " + F;
+    g.fillText("एआई युग का नया समाचार पत्र", W / 2, 164);
     g.textAlign = "left";
-    y = topY; col = 0;
-    meta.push({ ctx: g, colStart: topY });
-  }
+    g.strokeStyle = "#222"; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(M, 184); g.lineTo(W - M, 184); g.stroke();
+    g.lineWidth = 1;
+    g.fillStyle = "#333"; g.font = "18px " + F;
+    g.fillText(new Date().toLocaleDateString("hi-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }), M, 210);
+    g.textAlign = "center";
+    g.fillText("अजमेर", W / 2, 210);
+    g.textAlign = "right";
+    g.fillText("संपादक: रुक्मा पुत्र ऋषि", W - M, 210);
+    g.textAlign = "left";
+    g.strokeStyle = RULE;
+    g.beginPath(); g.moveTo(M, 222); g.lineTo(W - M, 222); g.stroke();
+    const TOP = 244;
+    g.fillStyle = MUT; g.font = "15px " + F;
+    g.textAlign = "center";
+    g.fillText("न्याय साप्ताहिक विशेषांक — चुने हुए लेख", W / 2, H - 34);
+    g.textAlign = "left";
 
-  function curColStart() { return meta[meta.length - 1].colStart; }
-  function colX() { return M + col * (colW + GUT); }
-  function ensure(need) {
-    const start = curColStart();
-    if (y + need <= BOT || y <= start + 1) return;
-    col++;
-    if (col >= NCOL) { newPage(); return; }
-    y = start;
-  }
-
-  function drawStyledPara(words, size, lh, color, justify) {
-    g.font = fontOf(size, false, false);
-    const SW = g.measureText(" ").width;
-    let line = [], wsum = 0;
-    words.forEach(function (word) {
-      g.font = fontOf(size, word.b, word.i);
-      word._w = g.measureText(word.w).width;
-    });
-    function flush(isLast) {
-      if (!line.length) return;
-      ensure(lh);
-      let x = colX();
-      const gaps = line.length - 1;
+    /* ---- text machinery ---- */
+    function buildLines(words, width, size, forceB) {
+      g.font = fontOf(size, false, false);
+      const SW = g.measureText(" ").width;
+      words.forEach(function (w2) {
+        g.font = fontOf(size, forceB || w2.b, w2.i);
+        w2._w = g.measureText(w2.w).width;
+      });
+      const lines = [];
+      let line = [], wsum = 0;
+      words.forEach(function (w2) {
+        if (line.length && wsum + line.length * SW + w2._w > width) { lines.push({ ws: line, wsum: wsum }); line = []; wsum = 0; }
+        line.push(w2); wsum += w2._w;
+      });
+      if (line.length) lines.push({ ws: line, wsum: wsum });
+      return { lines: lines, SW: SW };
+    }
+    function drawLine(ln, x, yb, width, size, color, justify, isLast, forceB, SW) {
       let gapW = SW;
+      const gaps = ln.ws.length - 1;
       if (justify && !isLast && gaps > 0) {
-        const extra = colW - wsum - gaps * SW;
+        const extra = width - ln.wsum - gaps * SW;
         gapW = SW + Math.min(SW * 1.7, Math.max(0, extra / gaps));
       }
-      line.forEach(function (word) {
-        g.font = fontOf(size, word.b, word.i);
+      let x2 = x;
+      ln.ws.forEach(function (w2) {
+        g.font = fontOf(size, forceB || w2.b, w2.i);
         g.fillStyle = color;
-        g.fillText(word.w, x, y + lh - 8);
-        x += word._w + gapW;
+        g.fillText(w2.w, x2, yb);
+        x2 += w2._w + gapW;
       });
-      y += lh;
-      line = []; wsum = 0;
     }
-    words.forEach(function (word) {
-      if (line.length && wsum + line.length * SW + word._w > colW) flush(false);
-      line.push(word);
-      wsum += word._w;
-    });
-    flush(true);
-  }
-
-  function drawSignature(words) {
-    const txt = words.map(function (w) { return w.w; }).join(" ").replace(/^[@—-]\s*/, "");
-    ensure(32);
-    g.font = fontOf(20, true, true);
-    g.fillStyle = BRAND;
-    g.textAlign = "right";
-    g.fillText("— " + txt, colX() + colW, y + 22);
-    g.textAlign = "left";
-    y += 36;
-  }
-
-  function drawBody(text) {
-    parseStyledParas(text).forEach(function (words) {
-      const plain = words.map(function (w) { return w.w; }).join(" ");
-      if (plain.charAt(0) === "@" || /^[—-]?\s*रुक्मा/.test(plain)) { drawSignature(words); return; }
-      drawStyledPara(words, BODY, BLH, INK, true);
-      y += 9;
-    });
-  }
-
-  function kickerAt(label, x0, w0) {
-    g.font = "bold 17px " + F;
-    const kw = g.measureText(label).width + 26;
-    g.fillStyle = BRAND;
-    g.fillRect(x0, y, kw, 30);
-    g.fillStyle = "#ffffff";
-    g.fillText(label, x0 + 13, y + 22);
-    y += 42;
-  }
-
-  function coverDraw(im, x0, w0, h0, y0) {
-    const scale = Math.max(w0 / im.naturalWidth, h0 / im.naturalHeight);
-    const sw2 = w0 / scale, sh2 = h0 / scale;
-    const sx = (im.naturalWidth - sw2) / 2, sy2 = (im.naturalHeight - sh2) / 2;
-    g.drawImage(im, sx, sy2, sw2, sh2, x0, y0, w0, h0);
-    g.strokeStyle = "#d5cfe6";
-    g.strokeRect(x0, y0, w0, h0);
-  }
-
-  function fullWidthPara(words, size, lh, color, bold) {
-    g.font = fontOf(size, bold, false);
-    const SW = g.measureText(" ").width;
-    let line = "", lines = [];
-    words.forEach(function (word) {
-      const trial = line ? line + " " + word.w : word.w;
-      g.font = fontOf(size, bold || word.b, word.i);
-      if (g.measureText(trial).width > fullW && line) { lines.push(line); line = word.w; }
-      else line = trial;
-    });
-    if (line) lines.push(line);
-    g.fillStyle = color;
-    lines.forEach(function (l) {
-      g.font = fontOf(size, bold, false);
-      g.fillText(l, M, y + lh - 10);
-      y += lh;
-    });
-  }
-
-  function leadStory(it) {
-    kickerAt("आज का विशेष", M, fullW);
-    const headWords = (parseStyledParas((it.r.shirshak && it.r.shirshak[0]) || it.topic)[0]) || [];
-    fullWidthPara(headWords, 47, 60, "#0d0d15", true);
-    y += 4;
-    g.font = "18px " + F; g.fillStyle = MUT;
-    g.fillText((it.d || "") + " · न्याय संवाद", M, y + 16);
-    y += 32;
-    const im = imgs[0];
-    const paras = parseStyledParas(it.r.lekh || "");
-    if (im) {
-      coverDraw(im, M, fullW, 400, y);
-      y += 416;
+    // flow paragraphs into a box; returns {y, done}
+    function flowParas(paras, box, size, lh0, color, justify) {
+      const lh = px(lh0);
+      let y2 = box.y;
+      for (let pi = 0; pi < paras.length; pi++) {
+        const words = paras[pi];
+        if (isSignaturePara(words)) {
+          if (y2 + lh > box.yEnd) return { y: y2, done: false, rest: paras.slice(pi) };
+          const txt = "— " + words.map(function (w2) { return w2.w; }).join(" ").replace(/^[@—-]\s*/, "");
+          g.font = fontOf(size, true, true);
+          g.fillStyle = RED;
+          g.textAlign = "right";
+          g.fillText(txt, box.x + box.w, y2 + lh - 8);
+          g.textAlign = "left";
+          y2 += lh + px(4);
+          continue;
+        }
+        const bl = buildLines(words, box.w, size, false);
+        for (let li = 0; li < bl.lines.length; li++) {
+          if (y2 + lh > box.yEnd) return { y: y2, done: false, rest: paras.slice(pi) };
+          drawLine(bl.lines[li], box.x, y2 + lh - 8, box.w, size, color, justify, li === bl.lines.length - 1, false, bl.SW);
+          y2 += lh;
+        }
+        y2 += px(8);
+      }
+      return { y: y2, done: true, rest: [] };
     }
-    if (paras.length) {
-      fullWidthPara(paras[0], 24, 35, "#26262e", true);
-      y += 14;
+    function headlineDraw(text, box, size, lh0, color, highlight) {
+      const words = (parseStyledParas(text)[0] || []).map(function (w2) { return { w: w2.w, b: true, i: false }; });
+      const bl = buildLines(words, box.w, size, true);
+      const lh = px(lh0);
+      let y2 = box.y;
+      bl.lines.forEach(function (ln) {
+        let x2 = box.x;
+        ln.ws.forEach(function (w2) {
+          g.font = fontOf(size, true, false);
+          if (highlight && w2.w.indexOf(highlight) > -1) {
+            g.fillStyle = YEL;
+            g.fillRect(x2 - 3, y2 + px(6), w2._w + 6, lh - px(4));
+          }
+          g.fillStyle = color;
+          g.fillText(w2.w, x2, y2 + lh - 10);
+          x2 += w2._w + bl.SW;
+        });
+        y2 += lh;
+      });
+      return y2;
     }
-    meta[0].colStart = y;
-    col = 0;
-    y = meta[0].colStart;
-    paras.slice(1).forEach(function (words) {
-      const plain = words.map(function (w) { return w.w; }).join(" ");
-      if (plain.charAt(0) === "@" || /^[—-]?\s*रुक्मा/.test(plain)) { drawSignature(words); return; }
-      drawStyledPara(words, BODY, BLH, INK, true);
-      y += 9;
-    });
-    y += 4;
-    ensure(28);
+    function kickerLine(label, x, y2, w) {
+      g.font = fontOf(19, true, false);
+      g.fillStyle = RED;
+      g.fillText(label, x, y2 + px(18));
+      const tw = g.measureText(label).width;
+      g.strokeStyle = RED; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x + tw + 14, y2 + px(11)); g.lineTo(x + w, y2 + px(11)); g.stroke();
+      g.lineWidth = 1;
+      return y2 + px(30);
+    }
+    function cover(im, x, y2, w, h2) {
+      const scale = Math.max(w / im.naturalWidth, h2 / im.naturalHeight);
+      const sw2 = w / scale, sh2 = h2 / scale;
+      g.drawImage(im, (im.naturalWidth - sw2) / 2, (im.naturalHeight - sh2) / 2, sw2, sh2, x, y2, w, h2);
+      g.strokeStyle = "#bbb";
+      g.strokeRect(x, y2, w, h2);
+    }
+
+    /* ---- zones ---- */
+    const n = items.length;
+    const LX = M, CX = M + c4 + G, CW = 2 * c4 + G, RX = M + 3 * (c4 + G);
+    const hasLeft = n > 2 && plan.left >= 0, hasRight = n > 1 && plan.right >= 0;
+
+    // CENTER: lead
+    (function () {
+      const it = items[plan.lead];
+      const x = hasLeft ? CX : M;
+      const w = hasLeft ? CW : (hasRight ? c4 * 3 + G * 2 : W - 2 * M);
+      let y2 = TOP;
+      y2 = kickerLine(plan.kick[plan.lead] + " · आज का विशेष", x, y2, w);
+      y2 = headlineDraw((it.r.shirshak && it.r.shirshak[0]) || it.topic, { x: x, y: y2, w: w }, 48, 60, "#0c0c12", plan.highlight);
+      g.font = fontOf(16, false, false); g.fillStyle = MUT;
+      g.fillText((it.d || "") + " · न्याय संवाद", x, y2 + px(16));
+      y2 += px(26);
+      const im = imgs[plan.lead];
+      if (im) { const ih = px(340); cover(im, x, y2, w, ih); y2 += ih + px(14); }
+      const paras = parseStyledParas(it.r.lekh || "");
+      if (paras.length) {
+        const r0 = flowParas([paras[0]], { x: x, y: y2, w: w, yEnd: BOT }, 23, 33, "#26262c", true);
+        y2 = r0.y + px(2);
+      }
+      // two sub-columns
+      const sc = Math.floor((w - G) / 2);
+      const box1 = { x: x, y: y2, w: sc, yEnd: BOT - px(6) };
+      let rest = paras.slice(1);
+      // pull quote reserved at top of column 2
+      let box2y = y2;
+      if (plan.pull[plan.lead]) {
+        const q = plan.pull[plan.lead];
+        const qx = x + sc + G;
+        g.fillStyle = BOXBG;
+        const qb = buildLines(q.split(/\s+/).map(function (w2) { return { w: w2, b: true, i: true }; }), sc - 34, 24, true);
+        const qh = qb.lines.length * px(34) + px(40);
+        g.fillRect(qx, y2, sc, qh);
+        g.fillStyle = RED;
+        g.fillRect(qx, y2, 6, qh);
+        let qy = y2 + px(30);
+        g.font = fontOf(24, true, true);
+        qb.lines.forEach(function (ln) {
+          let x3 = qx + 22;
+          ln.ws.forEach(function (w2) { g.fillStyle = "#33323c"; g.fillText(w2.w, x3, qy); x3 += w2._w + qb.SW; });
+          qy += px(34);
+        });
+        box2y = y2 + qh + px(14);
+      }
+      const r1 = flowParas(rest, box1, 20, 28.5, INK, true);
+      if (!r1.done) {
+        const r2 = flowParas(r1.rest, { x: x + sc + G, y: box2y, w: sc, yEnd: BOT - px(6) }, 20, 28.5, INK, true);
+        if (!r2.done) fits = false;
+      }
+      g.strokeStyle = RULE;
+      g.beginPath(); g.moveTo(x + sc + G / 2, y2); g.lineTo(x + sc + G / 2, BOT - px(6)); g.stroke();
+    })();
+
+    // LEFT rail: photo story + briefs
+    if (hasLeft) {
+      const it = items[plan.left];
+      let y2 = TOP;
+      const im = imgs[plan.left];
+      if (im) { const ih = px(280); cover(im, LX, y2, c4, ih); y2 += ih; }
+      const hw = (parseStyledParas((it.r.shirshak && it.r.shirshak[0]) || it.topic)[0] || []);
+      const hb = buildLines(hw, c4 - 28, 23, true);
+      const dh = hb.lines.length * px(32) + px(28);
+      g.fillStyle = DARK;
+      g.fillRect(LX, y2, c4, dh);
+      let hy = y2 + px(26);
+      hb.lines.forEach(function (ln) {
+        let x3 = LX + 14;
+        ln.ws.forEach(function (w2) { g.font = fontOf(23, true, false); g.fillStyle = "#fff"; g.fillText(w2.w, x3, hy); x3 += w2._w + hb.SW; });
+        hy += px(32);
+      });
+      y2 += dh + px(12);
+      const r = flowParas(parseStyledParas(it.r.lekh || ""), { x: LX, y: y2, w: c4, yEnd: BOT - px(6) }, 19, 27, INK, true);
+      if (!r.done) fits = false;
+      y2 = r.y + px(6);
+      // briefs
+      plan.briefs.forEach(function (bi) {
+        const b = items[bi];
+        const bparas = parseStyledParas(b.r.lekh || "").slice(0, 2);
+        const bh = buildLines((parseStyledParas((b.r.shirshak && b.r.shirshak[0]) || b.topic)[0] || []), c4 - 26, 20, true);
+        const estH = bh.lines.length * px(28) + px(120);
+        if (y2 + Math.min(estH, px(150)) > BOT - px(6)) { window.epDropped++; return; }
+        const boxTop = y2;
+        g.fillStyle = BOXBG;
+        g.fillRect(LX, y2, c4, Math.min(estH + px(40), BOT - px(6) - y2));
+        y2 += px(14);
+        y2 = kickerLine(plan.kick[bi], LX + 13, y2, c4 - 26);
+        let hy2 = y2;
+        bh.lines.forEach(function (ln) {
+          let x3 = LX + 13;
+          ln.ws.forEach(function (w2) { g.font = fontOf(20, true, false); g.fillStyle = "#101016"; g.fillText(w2.w, x3, hy2 + px(20)); x3 += w2._w + bh.SW; });
+          hy2 += px(28);
+        });
+        y2 = hy2 + px(8);
+        const br = flowParas(bparas, { x: LX + 13, y: y2, w: c4 - 26, yEnd: Math.min(boxTop + estH + px(26), BOT - px(10)) }, 18.5, 26, "#26262c", true);
+        y2 = br.y;
+        g.strokeStyle = "#d8d3ca";
+        g.strokeRect(LX, boxTop, c4, y2 - boxTop + px(10));
+        y2 += px(22);
+      });
+    } else { plan.briefs.forEach(function () { window.epDropped++; }); }
+
+    // RIGHT rail: second story
+    if (hasRight) {
+      const it = items[plan.right];
+      let y2 = TOP;
+      y2 = kickerLine(plan.kick[plan.right], RX, y2, c4);
+      y2 = headlineDraw((it.r.shirshak && it.r.shirshak[0]) || it.topic, { x: RX, y: y2, w: c4 }, 27, 36, "#0c0c12", "");
+      g.font = fontOf(15, false, false); g.fillStyle = MUT;
+      g.fillText(it.d || "", RX, y2 + px(14));
+      y2 += px(24);
+      const im = imgs[plan.right];
+      if (im && !imgs[plan.lead]) { const ih = px(220); cover(im, RX, y2, c4, ih); y2 += ih + px(12); }
+      const r = flowParas(parseStyledParas(it.r.lekh || ""), { x: RX, y: y2, w: c4, yEnd: BOT - px(6) }, 19.5, 28, INK, true);
+      if (!r.done) fits = false;
+    }
+
+    // zone separators
     g.strokeStyle = RULE;
-    g.beginPath(); g.moveTo(colX(), y + 4); g.lineTo(colX() + colW, y + 4); g.stroke();
-    g.beginPath(); g.moveTo(colX(), y + 8); g.lineTo(colX() + colW, y + 8); g.stroke();
-    y += 30;
+    if (hasLeft) { g.beginPath(); g.moveTo(CX - G / 2, TOP); g.lineTo(CX - G / 2, BOT - px(6)); g.stroke(); }
+    if (hasRight) { g.beginPath(); g.moveTo(RX - G / 2, TOP); g.lineTo(RX - G / 2, BOT - px(6)); g.stroke(); }
+
+    return { canvas: c, fits: fits };
   }
 
-  function story(it, i, label) {
-    ensure(180);
-    kickerAt(label, colX(), colW);
-    const hw = (parseStyledParas((it.r.shirshak && it.r.shirshak[0]) || it.topic)[0]) || [];
-    hw.forEach(function (w) { w.b = true; });
-    drawStyledPara(hw, 27, 37, "#101018", false);
-    ensure(16);
-    g.strokeStyle = BRAND; g.lineWidth = 3;
-    g.beginPath(); g.moveTo(colX(), y + 5); g.lineTo(colX() + 80, y + 5); g.stroke();
-    g.lineWidth = 1;
-    y += 18;
-    ensure(24);
-    g.font = "16px " + F; g.fillStyle = MUT;
-    g.fillText(it.d || "", colX(), y + 14);
-    y += 26;
-    const im = imgs[i];
-    if (im) {
-      const ih = Math.min(300, Math.round(im.naturalHeight * colW / im.naturalWidth));
-      ensure(ih + 16);
-      coverDraw(im, colX(), colW, ih, y);
-      y += ih + 16;
-    }
-    drawBody(it.r.lekh || "");
-    y += 4;
-    ensure(28);
-    g.strokeStyle = RULE;
-    g.beginPath(); g.moveTo(colX(), y + 4); g.lineTo(colX() + colW, y + 4); g.stroke();
-    g.beginPath(); g.moveTo(colX(), y + 8); g.lineTo(colX() + colW, y + 8); g.stroke();
-    y += 30;
+  const SCALES = [1.0, 0.94, 0.88, 0.83, 0.78, 0.73];
+  let result = null;
+  for (let si = 0; si < SCALES.length; si++) {
+    result = attempt(SCALES[si]);
+    if (result.fits) break;
   }
-
-  newPage();
-  const LABELS = ["संपादकीय", "व्यंग्य", "विचार", "विशेष", "नज़रिया"];
-  items.forEach(function (it, i) {
-    if (i === 0) leadStory(it);
-    else story(it, i, LABELS[(i - 1) % LABELS.length]);
-  });
-
-  meta.forEach(function (m2) {
-    const gg = m2.ctx;
-    gg.strokeStyle = "#DDD6EA";
-    gg.lineWidth = 1;
-    for (let c2 = 1; c2 < NCOL; c2++) {
-      const x2 = M + c2 * (colW + GUT) - GUT / 2;
-      gg.beginPath(); gg.moveTo(x2, m2.colStart + 4); gg.lineTo(x2, BOT); gg.stroke();
-    }
-  });
-  return pages;
+  return [result.canvas];
 }
 
 function canvasesToPdf(canvases) {
@@ -1344,13 +1422,15 @@ async function makeEpaper() {
   const items = checked.map(function (i) { return h[i]; }).filter(Boolean);
   if (!items.length) return;
   $("epaperbtn").disabled = true;
-  $("epaperbtn").textContent = "📰 e-paper बन रहा है…";
+  $("epaperbtn").textContent = "🎨 AI designer पन्ना सजा रहा है…";
   try {
-    const pages = await buildEpaper(items);
+    let plan = null;
+    try { plan = await designPlan(items); } catch (e) { plan = null; }
+    const pages = await buildEpaper(items, plan);
     epaperBlob = canvasesToPdf(pages);
     $("epaperprev").src = pages[0].toDataURL("image/jpeg", 0.8);
     show($("epaperout"), true);
-    note("ok", "📰 न्याय e-paper तैयार (" + pages.length + " पृष्ठ, " + items.length + " लेख) — नीचे 📤 से भेजिए।");
+    note("ok", "🗞️ न्याय का पहला पन्ना तैयार (" + items.length + " में से " + (items.length - (window.epDropped || 0)) + " लेख" + (window.epDropped ? "; " + window.epDropped + " जगह न होने से छूटे — कम लेख चुनें" : "") + ") — नीचे 📤 से भेजिए।");
   } catch (e) {
     note("err", "e-paper नहीं बन पाया — फिर कोशिश करें।||" + (e && e.message));
   } finally {
