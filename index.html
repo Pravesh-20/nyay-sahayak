@@ -172,6 +172,8 @@
     <input type="text" id="s_amodel" class="kbd">
     <label>लेखन-शैली के नमूने (पापा के पुराने लेख — जितने ज़्यादा, उतनी सटीक आवाज़)</label>
     <textarea id="s_style" style="min-height:140px"></textarea>
+    <label>न्याय banner — हर चित्र के नीचे अपने-आप जुड़ता है (नया बनवाकर यहाँ बदल सकते हैं)</label>
+    <input type="file" id="s_banner" accept="image/*">
     <button class="btn btn-main" id="savebtn">💾 Save settings</button>
     <p class="hint">Keys stay in this phone's browser storage only — they are never uploaded anywhere except directly to Anthropic/Google.</p>
   </div>
@@ -221,7 +223,7 @@
 
     <h2 style="margin-top:24px">चित्र</h2>
     <div id="imgbox">
-      <div id="imgwait">🖼️ चित्र बन रहा है…</div>
+      <div id="imgwait">🖼️ चित्र बन रहा है… (20–30 सेकंड लग सकते हैं)</div>
       <img id="genimg" alt="लेख का चित्र">
     </div>
     <div class="btnrow">
@@ -230,6 +232,8 @@
     </div>
     <button class="btn btn-wa" id="gptimg">🎨 ChatGPT से बढ़िया चित्र — जैसे पहले बनाते थे</button>
     <p class="hint" style="text-align:center">prompt अपने आप साथ जाएगा — ChatGPT में बस भेजना है (मुफ़्त ChatGPT से भी चलता है)</p>
+    <button class="btn btn-line" id="upimgbtn">📎 बना हुआ चित्र यहाँ लगाइए (ChatGPT/gallery से)</button>
+    <input type="file" id="upimg" accept="image/*" style="display:none">
     <textarea id="imgfix" placeholder="चित्र के बारे में अपनी बात लिखिए —\nबदलाव: बारिश हटाओ, शाम कर दो…\nया नई कल्पना: झील किनारे अकेला बैठा बूढ़ा आदमी…" style="margin-top:10px;min-height:72px"></textarea>
     <div class="btnrow">
       <button class="btn btn-line" id="imgfixbtn">🖌️ इसी चित्र में बदलाव</button>
@@ -238,10 +242,13 @@
     <label>चित्र के साथ जाने वाला caption</label>
     <div id="caption"></div>
 
-    <h2 style="margin-top:26px">📤 WhatsApp पर भेजिए — दो आसान क़दम</h2>
-    <button class="btn btn-wa" id="sharetext">1️⃣ पहले लेख भेजिए</button>
-    <button class="btn btn-wa" id="shareimg">2️⃣ फिर चित्र भेजिए</button>
-    <button class="btn btn-line" id="copyall">📋 या पूरा लेख कॉपी करें (ख़ुद paste के लिए)</button>
+    <h2 style="margin-top:26px">📤 WhatsApp पर भेजिए</h2>
+    <button class="btn btn-wa" id="shareall">📤 लेख + चित्र एक साथ भेजिए</button>
+    <div class="btnrow">
+      <button class="btn btn-line" id="sharetext">सिर्फ़ लेख</button>
+      <button class="btn btn-line" id="shareimg">सिर्फ़ चित्र</button>
+    </div>
+    <button class="btn btn-line" id="copyall">📋 पूरा लेख कॉपी करें (ख़ुद paste के लिए)</button>
 
     <button class="btn btn-line" id="newbtn" style="margin-top:22px">🆕 नया लेख शुरू करें</button>
   </div>
@@ -362,7 +369,8 @@ function loadCfg() {
     amodel: c.amodel || "claude-opus-4-8",
     tmodel: (c.tmodel && c.tmodel !== "gemini-2.5-pro") ? c.tmodel : "gemini-3-flash-preview",
     gmodel: (c.gmodel && c.gmodel !== "gemini-2.5-flash-image") ? c.gmodel : "gemini-3.1-flash-image",
-    style: c.style || DEFAULT_STYLE
+    style: c.style || DEFAULT_STYLE,
+    banner: c.banner || ""
   };
 }
 let cfg = loadCfg();
@@ -404,6 +412,7 @@ let convo = [];          // conversation with Claude for edits
 let current = null;      // latest parsed result
 let selHeadline = 0;
 let imgDataUrl = null;
+let rawImg = null;
 
 function show(el, on) { el.style.display = on ? "block" : "none"; }
 function toggle(el) { show(el, getComputedStyle(el).display === "none"); }
@@ -574,7 +583,13 @@ async function pollinationsImage(promptText) {
   });
 }
 
+let geminiImgDead = false;
 async function geminiImageRequest(parts, model, tried) {
+  if (geminiImgDead) {
+    const tp0 = parts.find(p => p.text);
+    if (tp0 && !parts.some(p => p.inlineData)) return pollinationsImage(tp0.text);
+    if (parts.some(p => p.inlineData)) throw new Error("सीधा सुधार अभी उपलब्ध नहीं — नया चित्र बना रहे हैं।||gemini image quota 0");
+  }
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
   const doFetch = (body) => fetch(url, {
     method: "POST",
@@ -591,7 +606,7 @@ async function geminiImageRequest(parts, model, tried) {
       if (next) return geminiImageRequest(parts, next, tried);
     }
     const tp = parts.find(p => p.text);
-    if (tp && !parts.some(p => p.inlineData)) return pollinationsImage(tp.text);
+    if (tp && !parts.some(p => p.inlineData)) { geminiImgDead = true; return pollinationsImage(tp.text); }
   }
   if (!res.ok) {
     let detail = "";
@@ -661,7 +676,8 @@ async function newImageFromDesc() {
   try {
     const engPrompt = await hindiToImagePrompt(desc);
     if (current) current.image_prompt = engPrompt;
-    imgDataUrl = await callGemini(engPrompt);
+    rawImg = await callGemini(engPrompt);
+    imgDataUrl = await composeWithBanner(rawImg);
     $("genimg").src = imgDataUrl;
     note("ok", "✅ आपकी कल्पना का चित्र तैयार — पसंद न आए तो 🔁 या फिर से बताइए।");
   } catch (e) {
@@ -677,18 +693,20 @@ async function editImage() {
   const instr = $("imgfix").value.trim();
   if (!instr) { note("ok", "पहले लिखिए चित्र में क्या बदलना है — जैसे: बारिश हटाओ।"); return; }
   if (!imgDataUrl) { note("ok", "चित्र अभी तैयार नहीं है — थोड़ा रुकिए।"); return; }
-  const prev = imgDataUrl;
+  const prev = rawImg || imgDataUrl;
   $("imgfix").value = "";
   show($("genimg"), false);
   show($("imgwait"), true);
   try {
     const mime = (prev.match(/^data:([^;]+);/) || [null, "image/png"])[1];
-    imgDataUrl = await callGeminiEdit(prev.split(",")[1], mime, instr);
+    rawImg = await callGeminiEdit(prev.split(",")[1], mime, instr);
+    imgDataUrl = await composeWithBanner(rawImg);
     $("genimg").src = imgDataUrl;
     note("ok", "✅ चित्र सुधर गया — नीचे देखिए।");
   } catch (e) {
     try {
-      imgDataUrl = await pollinationsImage(await hindiToImagePrompt((current ? current.image_prompt : "") + ". बदलाव: " + instr));
+      rawImg = await pollinationsImage(await hindiToImagePrompt((current ? current.image_prompt : "") + ". बदलाव: " + instr));
+      imgDataUrl = await composeWithBanner(rawImg);
       $("genimg").src = imgDataUrl;
       note("ok", "✅ मुफ़्त engine से नया सुधरा चित्र बना दिया — नीचे देखिए।");
     } catch (e2) {
@@ -725,13 +743,46 @@ function renderResult(r) {
   show($("result"), true);
 }
 
+/* ---------- न्याय banner composition ---------- */
+let bannerEl = null;
+function loadImgEl(src) {
+  return new Promise(function (ok, bad) {
+    const im = new Image();
+    im.onload = function () { ok(im); };
+    im.onerror = bad;
+    im.src = src;
+  });
+}
+async function loadBanner() {
+  if (bannerEl) return bannerEl;
+  try { bannerEl = await loadImgEl(cfg.banner || "banner.jpg"); } catch (e) { bannerEl = null; }
+  return bannerEl;
+}
+async function composeWithBanner(dataUrl) {
+  try {
+    const banner = await loadBanner();
+    if (!banner) return dataUrl;
+    const photo = await loadImgEl(dataUrl);
+    const W = 1200;
+    const ph = Math.round(photo.naturalHeight * W / photo.naturalWidth);
+    const bh = Math.round(banner.naturalHeight * W / banner.naturalWidth);
+    const c = document.createElement("canvas");
+    c.width = W; c.height = ph + bh;
+    const g = c.getContext("2d");
+    g.drawImage(photo, 0, 0, W, ph);
+    g.drawImage(banner, 0, ph, W, bh);
+    return c.toDataURL("image/jpeg", 0.9);
+  } catch (e) { return dataUrl; }
+}
+
 async function makeImage(extra) {
   if (!current) return;
   imgDataUrl = null;
   show($("genimg"), false);
   show($("imgwait"), true);
   try {
-    imgDataUrl = await callGemini(current.image_prompt + (extra || ""));
+    rawImg = await callGemini(current.image_prompt + (extra || ""));
+    imgDataUrl = await composeWithBanner(rawImg);
     $("genimg").src = imgDataUrl;
     show($("genimg"), true);
   } catch (e) {
@@ -838,6 +889,26 @@ function articleText() {
   return chosenHeadline() + "\n\n" + (current ? current.lekh : "");
 }
 
+async function shareEverything() {
+  if (!current) return;
+  const text = articleText();
+  try {
+    if (imgDataUrl && navigator.canShare) {
+      const blob = await (await fetch(imgDataUrl)).blob();
+      const file = new File([blob], "nyay.jpg", { type: blob.type || "image/jpeg" });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], text: text });
+        return;
+      }
+    }
+    if (navigator.share) { await navigator.share({ text: text }); return; }
+    throw new Error("no-share");
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    await copy(text, "📋 लेख कॉपी हो गया — WhatsApp में paste कीजिए; चित्र 💾 सेव से भेज दीजिए।");
+  }
+}
+
 async function shareTextOnly() {
   if (!current) return;
   const text = articleText();
@@ -897,15 +968,28 @@ function fillSettings() {
   $("s_amodel").value = cfg.amodel; $("s_tmodel").value = cfg.tmodel; $("s_gmodel").value = cfg.gmodel;
   $("s_style").value = cfg.style;
 }
-function saveSettings() {
+async function saveSettings() {
+  const oldBanner = cfg.banner || "";
   cfg = {
     akey: $("s_akey").value.trim(),
     gkey: $("s_gkey").value.trim(),
     amodel: $("s_amodel").value.trim() || "claude-opus-4-8",
     tmodel: $("s_tmodel").value.trim() || "gemini-3-flash-preview",
     gmodel: $("s_gmodel").value.trim() || "gemini-3.1-flash-image",
-    style: $("s_style").value.trim() || DEFAULT_STYLE
+    style: $("s_style").value.trim() || DEFAULT_STYLE,
+    banner: oldBanner
   };
+  const bf = $("s_banner").files && $("s_banner").files[0];
+  if (bf) {
+    cfg.banner = await new Promise(function (ok, bad) {
+      const r = new FileReader();
+      r.onload = function () { ok(String(r.result)); };
+      r.onerror = bad;
+      r.readAsDataURL(bf);
+    });
+    bannerEl = null;
+    $("s_banner").value = "";
+  }
   localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
   show($("settings"), false);
   note("ok", "✅ Settings save हो गईं।");
@@ -916,6 +1000,7 @@ $("gobtn").onclick = generate;
 $("savebtn").onclick = saveSettings;
 $("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
 $("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
+$("shareall").onclick = shareEverything;
 $("sharetext").onclick = shareTextOnly;
 $("shareimg").onclick = shareImage;
 $("copyall").onclick = copyAll;
@@ -929,9 +1014,34 @@ $("saveimg").onclick = saveImage;
 $("reimg").onclick = () => makeImage("\nA different composition and camera angle this time.");
 $("imgfixbtn").onclick = editImage;
 $("newimgbtn").onclick = newImageFromDesc;
+$("upimgbtn").onclick = () => $("upimg").click();
+$("upimg").onchange = async () => {
+  const f = $("upimg").files && $("upimg").files[0];
+  if (!f) return;
+  show($("genimg"), false);
+  show($("imgwait"), true);
+  try {
+    const dataUrl = await new Promise(function (ok, bad) {
+      const r = new FileReader();
+      r.onload = function () { ok(String(r.result)); };
+      r.onerror = bad;
+      r.readAsDataURL(f);
+    });
+    rawImg = dataUrl;
+    imgDataUrl = await composeWithBanner(dataUrl);
+    $("genimg").src = imgDataUrl;
+    note("ok", "✅ आपका चित्र न्याय banner के साथ तैयार — अब 📤 से भेज दीजिए।");
+  } catch (e) {
+    note("err", "चित्र नहीं लग पाया — फिर कोशिश कीजिए।");
+  } finally {
+    $("upimg").value = "";
+    show($("imgwait"), false);
+    show($("genimg"), true);
+  }
+};
 $("gptimg").onclick = () => {
   if (!current) return;
-  const ask = "Please create this image: " + current.image_prompt;
+  const ask = "Create a dramatic Hindi news-editorial social media image. Scene: " + current.image_prompt + " Overlay this Hindi headline on the image in bold stylish Devanagari lettering with strong contrast: \"" + chosenHeadline() + "\". Indian news-poster style like trending YouTube news thumbnails, highly detailed, vivid colors.";
   window.open("https://chatgpt.com/?q=" + encodeURIComponent(ask), "_blank");
   try { navigator.clipboard.writeText(ask).catch(function () {}); } catch (e) {}
   note("ok", "🎨 ChatGPT खुल रहा है — prompt अपने आप भरा मिलेगा, बस भेज दीजिए। (prompt कॉपी भी हुआ है — ख़ाली दिखे तो paste कर दीजिए)");
