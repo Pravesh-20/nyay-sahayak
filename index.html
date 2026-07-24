@@ -203,6 +203,7 @@
     <p class="hint">कुछ ही देर में तैयार लेख, 3 शीर्षक, चित्र और caption — सब एक साथ मिलेगा।</p>
     <button class="btn btn-line" id="newsbtn" style="margin-top:16px">📰 आज क्या लिखें? — ताज़ा मुद्दे दिखाइए</button>
     <div id="newschips" class="chips"></div>
+    <button class="btn btn-line" id="epapershortcut" style="margin-top:10px">🗞️ साप्ताहिक न्याय e-paper — पुराने लेखों से PDF बनाइए</button>
   </div>
 
   <!-- PROGRESS -->
@@ -1283,23 +1284,32 @@ function openWhatsAppWithText(text) {
   window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
 }
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
+}
+
 async function shareEverything() {
   if (!current) return;
   const text = articleText();
-  if (imgDataUrl) {
+  if (isMobileDevice()) {
     try {
-      const file = dataUrlToFile(imgDataUrl, "nyay.jpg");
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], text: text });
-        return;
+      if (imgDataUrl) {
+        const file = dataUrlToFile(imgDataUrl, "nyay.jpg");
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], text: text });
+          return;
+        }
       }
+      if (navigator.share) { await navigator.share({ text: text }); return; }
     } catch (e) {
       if (e && e.name === "AbortError") return;
     }
   }
+  // Desktop: share sheets drop the caption, so set up the WhatsApp Web caption trick
+  try { navigator.clipboard.writeText(text).catch(function () {}); } catch (e) {}
   if (imgDataUrl) saveImage();
-  openWhatsAppWithText(text);
-  note("ok", "💻 इस browser में चित्र+लेख एक साथ नहीं जा सकते, इसलिए: चित्र download हो गया और WhatsApp खुल गया है — group चुनकर लेख भेजिए, फिर 📎 से चित्र लगा दीजिए। 📱 फ़ोन पर यह एक ही click में हो जाता है।");
+  window.open("https://web.whatsapp.com/", "_blank");
+  note("ok", "💻 Desktop तरीक़ा (एक ही message में दोनों): लेख कॉपी हो चुका है ✓ और चित्र download हो गया ✓। WhatsApp Web में group खोलिए → 📎 से चित्र लगाइए → caption वाली जगह paste कीजिए (Cmd+V / Ctrl+V) → भेज दीजिए। 📱 फ़ोन पर यह सब एक ही click में होता है।");
 }
 
 async function shareTextOnly() {
@@ -1419,6 +1429,12 @@ $("savebtn").onclick = saveSettings;
 $("setbtn").onclick = () => { fillSettings(); show($("histpanel"), false); toggle($("settings")); };
 $("histbtn").onclick = () => { renderHistory(); show($("settings"), false); toggle($("histpanel")); };
 $("epaperbtn").onclick = makeEpaper;
+$("epapershortcut").onclick = () => {
+  renderHistory();
+  show($("settings"), false);
+  show($("histpanel"), true);
+  $("epaperbtn").scrollIntoView({ behavior: "smooth", block: "center" });
+};
 $("epsharebtn").onclick = shareEpaper;
 $("epsavebtn").onclick = saveEpaper;
 $("shareall").onclick = shareEverything;
