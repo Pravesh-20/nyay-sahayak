@@ -400,6 +400,8 @@ ${cfg.style}
 - WhatsApp की तरह ज़ोर देने के लिए *मोटे* और _तिरछे_ चिह्नों का प्रयोग वैसे ही करें जैसे नमूनों में है; ❗❓ का प्रयोग भी नमूनों जैसा संयमित रखें।
 - लेख का अंत हमेशा लेखक की छाप से करें: @ *_रुक्मा पुत्र ऋषि_*
 - कोई तथ्य, आँकड़ा या नाम गढ़ें नहीं। जो बात आप पक्के तौर पर नहीं जानते, उसके ठीक बाद ⚠️[जाँच लें] लिखें।
+- संदेश में अगर [🔎 ताज़ा जानकारी] दी गई हो, तो लेख के सारे तथ्य/आँकड़े/नाम केवल उसी से लें — अपनी पुरानी स्मृति के आँकड़े बिल्कुल न मिलाएँ (आपकी स्मृति पुरानी है, खोजी हुई जानकारी आज की है)।
+- ताज़ा घटना पर पक्की जानकारी न हो तो काल्पनिक आँकड़ा हरगिज़ न लिखें — उस जगह ⚠️[ताज़ा आँकड़ा जोड़ें] छोड़ दें।
 - shirshak: ठीक 3 विकल्प — आकर्षक, अख़बारी।
 - caption: WhatsApp/Facebook के लिए 2 छोटी पंक्तियाँ + 3-4 हिन्दी hashtags।
 - image_prompt: English में, 60–100 शब्द। लेख के मर्म को एक शक्तिशाली प्रतीकात्मक दृश्य (central visual metaphor) में बदलें — जैसे रोती हुई झील, फ़ाइलों में दबा शहर, कुर्सी को निगलता गड्ढा। स्पष्ट लिखें: central metaphor, foreground और background के तत्व, mood, cinematic lighting, camera angle। किसी वास्तविक व्यक्ति (नेता आदि) का चेहरा नहीं। अंत में हमेशा जोड़ें: "hyper-detailed photorealistic editorial illustration, dramatic emotional cinematic lighting, Indian setting, 4:3 format".
@@ -517,6 +519,31 @@ function persistModel(field, value) {
 }
 
 /* ---------- Gemini (article text — the free default) ---------- */
+async function researchFacts(topic, model, tried) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": cfg.gkey },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: "Search the web for the LATEST information on this topic (today's date matters — prefer news from the last 48 hours when the topic is a recent event).\n\nविषय: " + topic + "\n\nखोजकर दीजिए: 6-12 सटीक bullet तथ्य हिन्दी में — तारीख़ें, स्कोर/आँकड़े, नाम, कौन-क्या-कब-कहाँ। हर तथ्य छोटा, पक्का और source-आधारित। अगर विषय पर ताज़ा जानकारी न मिले तो केवल NO_FACTS लिखिए।" }] }],
+      tools: [{ google_search: {} }]
+    })
+  });
+  if (res.status === 404 || res.status === 429) {
+    tried = (tried || []).concat([model]);
+    if (tried.length <= 2) {
+      const next = (await rankedModels(false)).find(m => tried.indexOf(m) === -1);
+      if (next) return researchFacts(topic, next, tried);
+    }
+    return "";
+  }
+  if (!res.ok) return "";
+  const data = await res.json().catch(function () { return null; });
+  const cand = data && data.candidates && data.candidates[0];
+  const txt = cand && cand.content && cand.content.parts ? cand.content.parts.map(p => p.text || "").join("").trim() : "";
+  if (!txt || txt.indexOf("NO_FACTS") > -1) return "";
+  return txt;
+}
+
 async function callGeminiText(messages, model, tried) {
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
   const res = await fetch(url, {
@@ -842,8 +869,13 @@ async function generate() {
   if (listening) micStop();
   show($("result"), false);
   $("gobtn").disabled = true;
-  progress(true);
-  convo = [{ role: "user", content: "आज का विषय / मेरी कच्ची बात:\n" + topic }];
+  progress(true, ["🔎 ताज़ा जानकारी खोजी जा रही है…", "संपादक जी लिख रहे हैं…", "शीर्षक सोचे जा रहे हैं…", "बस थोड़ी देर और…"]);
+  let userMsg = "आज का विषय / मेरी कच्ची बात:\n" + topic;
+  try {
+    const facts = await researchFacts(topic, cfg.tmodel);
+    if (facts) userMsg += "\n\n[🔎 आज की खोजी हुई ताज़ा जानकारी — लेख के तथ्य केवल इन्हीं पर आधारित रखें]\n" + facts;
+  } catch (e) {}
+  convo = [{ role: "user", content: userMsg }];
   try {
     const raw = await writeArticle(convo);
     const r = parseJSON(raw);
